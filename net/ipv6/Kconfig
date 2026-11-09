@@ -314,6 +314,20 @@ config IPV6_MC_IF_LOOKUP_RHASH
 
 endchoice
 
+config IPV6_MC_IF_HASH_THRESH
+	int "IPv6: groups on an interface before its lookup index is built"
+	range 1 65536
+	default 16
+	depends on IPV6_MC_IF_LOOKUP_HASH || IPV6_MC_IF_LOOKUP_RHASH
+	help
+	  The lookup index of an interface is built by the join that
+	  brings the interface to this many multicast groups.  The count
+	  includes the groups the kernel joins by itself, such as the
+	  all-nodes and solicited-node groups.  Interfaces below the
+	  threshold search the list.
+
+	  If unsure, keep the default of 16.
+
 config IPV6_SEG6_LWTUNNEL
 	bool "IPv6: Segment Routing Header encapsulation support"
 	depends on IPV6

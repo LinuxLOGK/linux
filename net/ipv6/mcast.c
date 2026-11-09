@@ -40,6 +40,7 @@
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
+#include <linux/jhash.h>
 #include <linux/pkt_sched.h>
 #include <net/mld.h>
 
@@ -845,6 +846,154 @@ static inline struct ifmcaddr6 *mc_list_next(struct ifmcaddr6 *mc)
 {
 	return hlist_entry_safe(mc->mca_list.next, struct ifmcaddr6,
 				mca_list);
+}
+
+/* Interface multicast group lookup index
+ *
+ * With CONFIG_IPV6_MC_IF_LOOKUP_HASH, idev->mc_hash is a fixed-size hash
+ * table over idev->mc_list.  It is built when the interface reaches
+ * IPV6_MC_IF_HASH_THRESH groups and is kept, even if groups are left
+ * again, until ipv6_mc_destroy_dev().
+ *
+ * The table and the bucket linkage of every group are protected by
+ * idev->lock, exactly like mc_list: lookups run under read_lock_bh(),
+ * updates under write_lock_bh(), and neither a table nor a bucket pointer
+ * is used after the lock has been dropped.  The bucket array can therefore
+ * be freed without an RCU grace period once it has been detached under
+ * the write lock.
+ *
+ * mc_hash and mc_count are only written with RTNL held as well, so RTNL
+ * holders may read them without taking idev->lock.
+ */
+#define IPV6_MC_IF_HASH_BITS	8
+#define IPV6_MC_IF_HASH_SIZE	(1U << IPV6_MC_IF_HASH_BITS)
+
+#ifdef CONFIG_IPV6_MC_IF_HASH_THRESH
+#define IPV6_MC_IF_HASH_THRESH	CONFIG_IPV6_MC_IF_HASH_THRESH
+#else
+#define IPV6_MC_IF_HASH_THRESH	UINT_MAX
+#endif
+
+static u32 ip6_mc_hash_salt __read_mostly;
+
+/* idev->lock held.  NULL means "search mc_list". */
+static inline struct hlist_head *ip6_mc_hash_table(const struct inet6_dev *idev)
+{
+	if (!IS_ENABLED(CONFIG_IPV6_MC_IF_LOOKUP_HASH))
+		return NULL;
+
+	return idev->mc_hash;
+}
+
+static inline struct hlist_head *ip6_mc_hash_bucket(struct hlist_head *hash,
+						    const struct in6_addr *addr)
+{
+	u32 h = jhash2((__force const u32 *)addr->s6_addr32,
+		       ARRAY_SIZE(addr->s6_addr32), ip6_mc_hash_salt);
+
+	return &hash[h & (IPV6_MC_IF_HASH_SIZE - 1)];
+}
+
+/* Find the group @addr on the interface.  idev->lock held, read or write.
+ * A group address appears at most once on mc_list.
+ */
+static __maybe_unused struct ifmcaddr6 *
+ip6_mc_find(struct inet6_dev *idev, const struct in6_addr *addr)
+{
+	struct hlist_head *hash = ip6_mc_hash_table(idev);
+	struct ifmcaddr6 *mc;
+
+	if (hash) {
+		hlist_for_each_entry(mc, ip6_mc_hash_bucket(hash, addr),
+				     mca_hnode) {
+			if (ipv6_addr_equal(&mc->mca_addr, addr))
+				return mc;
+		}
+		return NULL;
+	}
+
+	hlist_for_each_entry(mc, &idev->mc_list, mca_list) {
+		if (ipv6_addr_equal(&mc->mca_addr, addr))
+			return mc;
+	}
+	return NULL;
+}
+
+/* Index a group that was just added to mc_list.  idev->lock write held. */
+static inline void ip6_mc_hash_add(struct inet6_dev *idev,
+				   struct ifmcaddr6 *mc)
+{
+	struct hlist_head *hash = ip6_mc_hash_table(idev);
+
+	if (hash)
+		hlist_add_head(&mc->mca_hnode,
+			       ip6_mc_hash_bucket(hash, &mc->mca_addr));
+}
+
+/* Unindex a group that is being removed from mc_list.  idev->lock write
+ * held.  A group that is not hashed is left alone.
+ */
+static inline void ip6_mc_hash_del(struct ifmcaddr6 *mc)
+{
+	if (IS_ENABLED(CONFIG_IPV6_MC_IF_LOOKUP_HASH))
+		hlist_del_init(&mc->mca_hnode);
+}
+
+/* Would one more group on @idev make it eligible for a table it does not
+ * have yet?  RTNL held.
+ */
+static inline bool ip6_mc_hash_wanted(const struct inet6_dev *idev)
+{
+	return IS_ENABLED(CONFIG_IPV6_MC_IF_LOOKUP_HASH) && !idev->mc_hash &&
+	       idev->mc_count + 1 >= IPV6_MC_IF_HASH_THRESH;
+}
+
+/* Allocate an empty table.  Group joins can be reached with BH disabled
+ * (ipv6_ifa_notify() -> addrconf_join_anycast() -> addrconf_join_solict()),
+ * so this must not sleep.  Failure is not an error: the caller keeps
+ * searching mc_list and a later join tries again.
+ */
+static __maybe_unused struct hlist_head *ip6_mc_hash_alloc(void)
+{
+	net_get_random_once(&ip6_mc_hash_salt, sizeof(ip6_mc_hash_salt));
+
+	return kcalloc(IPV6_MC_IF_HASH_SIZE, sizeof(struct hlist_head),
+		       GFP_ATOMIC | __GFP_NOWARN);
+}
+
+/* Hash every group on mc_list into the empty table @hash, then publish
+ * it.  idev->lock write held, so no lookup can see a half-built table.
+ */
+static __maybe_unused void ip6_mc_hash_publish(struct inet6_dev *idev,
+					       struct hlist_head *hash)
+{
+	struct ifmcaddr6 *mc;
+
+	hlist_for_each_entry(mc, &idev->mc_list, mca_list)
+		hlist_add_head(&mc->mca_hnode,
+			       ip6_mc_hash_bucket(hash, &mc->mca_addr));
+
+	idev->mc_hash = hash;
+}
+
+/* Unpublish the table and unhash every group.  idev->lock write held.
+ * Later lookups search mc_list.  Returns the bucket array, which the
+ * caller frees after dropping the lock.
+ */
+static __maybe_unused struct hlist_head *
+ip6_mc_hash_detach(struct inet6_dev *idev)
+{
+	struct hlist_head *hash = idev->mc_hash;
+	struct ifmcaddr6 *mc;
+
+	if (!hash)
+		return NULL;
+
+	idev->mc_hash = NULL;
+	hlist_for_each_entry(mc, &idev->mc_list, mca_list)
+		INIT_HLIST_NODE(&mc->mca_hnode);
+
+	return hash;
 }
 
 static void mca_get(struct ifmcaddr6 *mc)
