@@ -1188,10 +1188,7 @@ bool ipv6_chk_mcast_addr(struct net_device *dev, const struct in6_addr *group,
 	idev = __in6_dev_get(dev);
 	if (idev) {
 		read_lock_bh(&idev->lock);
-		hlist_for_each_entry(mc, &idev->mc_list, mca_list) {
-			if (ipv6_addr_equal(&mc->mca_addr, group))
-				break;
-		}
+		mc = ip6_mc_find(idev, group);
 		if (mc) {
 			if (src_addr && !ipv6_addr_any(src_addr)) {
 				struct ip6_sf_list *psf;
