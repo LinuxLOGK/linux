@@ -1208,7 +1208,7 @@ static void qeth_l3_add_mc6_to_hash(struct qeth_card *card,
 	if (!tmp)
 		return;
 
-	for (im6 = in6_dev->mc_list; im6 != NULL; im6 = im6->next) {
+	hlist_for_each_entry(im6, &in6_dev->mc_list, mca_list) {
 		ipv6_eth_mc_map(&im6->mca_addr, tmp->mac);
 		memcpy(&tmp->u.a6.addr, &im6->mca_addr.s6_addr,
 		       sizeof(struct in6_addr));
