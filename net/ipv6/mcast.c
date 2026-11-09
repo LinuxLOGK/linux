@@ -980,8 +980,7 @@ static __maybe_unused void ip6_mc_hash_publish(struct inet6_dev *idev,
  * Later lookups search mc_list.  Returns the bucket array, which the
  * caller frees after dropping the lock.
  */
-static __maybe_unused struct hlist_head *
-ip6_mc_hash_detach(struct inet6_dev *idev)
+static struct hlist_head *ip6_mc_hash_detach(struct inet6_dev *idev)
 {
 	struct hlist_head *hash = idev->mc_hash;
 	struct ifmcaddr6 *mc;
@@ -2756,6 +2755,7 @@ void ipv6_mc_init_dev(struct inet6_dev *idev)
 
 void ipv6_mc_destroy_dev(struct inet6_dev *idev)
 {
+	struct hlist_head *hash;
 	struct ifmcaddr6 *i;
 
 	/* Deactivate timers */
@@ -2773,6 +2773,13 @@ void ipv6_mc_destroy_dev(struct inet6_dev *idev)
 		__ipv6_dev_mc_dec(idev, &in6addr_linklocal_allrouters);
 
 	write_lock_bh(&idev->lock);
+	/* Our caller has cleared dev->ip6_ptr, but a reader that fetched
+	 * this idev before that can still look groups up.  Detach the index
+	 * before the remaining groups are released, so that such a reader
+	 * searches what is left of mc_list and never follows a bucket to a
+	 * group that is gone.
+	 */
+	hash = ip6_mc_hash_detach(idev);
 	while ((i = mc_list_first(idev)) != NULL) {
 		hlist_del_init(&i->mca_list);
 
@@ -2782,6 +2789,9 @@ void ipv6_mc_destroy_dev(struct inet6_dev *idev)
 		write_lock_bh(&idev->lock);
 	}
 	write_unlock_bh(&idev->lock);
+
+	/* Lookups use the table only under idev->lock: nobody has it now. */
+	kfree(hash);
 }
 
 static void ipv6_mc_rejoin_groups(struct inet6_dev *idev)
