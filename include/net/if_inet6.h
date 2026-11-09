@@ -13,6 +13,7 @@
 #include <net/snmp.h>
 #include <linux/ipv6.h>
 #include <linux/refcount.h>
+#include <linux/rhashtable-types.h>
 
 /* inet6_dev.if_flags */
 
@@ -123,6 +124,8 @@ struct ifmcaddr6 {
 	struct in6_addr		mca_addr;
 	struct inet6_dev	*idev;
 	struct hlist_node	mca_list;	/* idev->mc_list */
+	struct hlist_node	mca_hnode;	/* idev->mc_hash bucket */
+	struct rhash_head	mca_rhnode;	/* idev->mc_rht */
 	struct ifmcaddr6	*next;		/* idev->mc_tomb only */
 	struct ip6_sf_list	*mca_sources;
 	struct ip6_sf_list	*mca_tomb;
@@ -174,7 +177,13 @@ struct inet6_dev {
 
 	struct list_head	addr_list;
 
+	/* mc_list and its lookup indexes are protected by ->lock.  The
+	 * indexes stay NULL unless the matching lookup option is built in
+	 * and the interface has grown past the activation threshold.
+	 */
 	struct hlist_head	mc_list;
+	struct hlist_head	*mc_hash;	/* fixed-size hash of mc_list */
+	struct rhashtable	*mc_rht;	/* rhashtable of mc_list */
 	struct ifmcaddr6	*mc_tomb;
 	spinlock_t		mc_lock;
 
@@ -182,6 +191,7 @@ struct inet6_dev {
 	unsigned char		mc_gq_running;
 	unsigned char		mc_ifc_count;
 	unsigned char		mc_dad_count;
+	unsigned int		mc_count;	/* entries on mc_list */
 
 	unsigned long		mc_v1_seen;	/* Max time we stay in MLDv1 mode */
 	unsigned long		mc_qi;		/* Query Interval */

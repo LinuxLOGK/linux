@@ -272,6 +272,48 @@ config IPV6_PIMSM_V2
 	  Support for IPv6 PIM multicast routing protocol PIM-SMv2.
 	  If unsure, say N.
 
+choice
+	prompt "IPv6: interface multicast group lookup"
+	default IPV6_MC_IF_LOOKUP_LIST
+	help
+	  Selects how the multicast groups joined on an interface
+	  (inet6_dev->mc_list) are searched, for example when a received
+	  multicast packet is checked by ipv6_chk_mcast_addr().
+
+	  The data structure layout is the same for every choice; only
+	  the lookup path changes.
+
+	  If unsure, choose "Linear list".
+
+config IPV6_MC_IF_LOOKUP_LIST
+	bool "Linear list"
+	help
+	  Walk the per-interface group list from its head until the
+	  group is found.  This is the behaviour of an unmodified
+	  kernel: the cost of a lookup grows with the number of groups
+	  joined on the interface.  No lookup index is ever allocated.
+
+config IPV6_MC_IF_LOOKUP_HASH
+	bool "Fixed-size hash table"
+	help
+	  Index the per-interface group list with a fixed-size hash
+	  table once the interface has joined enough groups.  Interfaces
+	  with few groups keep using the list.  The table is protected
+	  by the same lock as the list and is kept until the IPv6 state
+	  of the device is destroyed.
+
+config IPV6_MC_IF_LOOKUP_RHASH
+	bool "Resizable hash table (rhashtable)"
+	depends on BROKEN
+	help
+	  Index the per-interface group list with an rhashtable that
+	  grows with the number of groups joined on the interface.
+
+	  Not implemented yet; the BROKEN dependency is dropped by the
+	  change that adds the implementation.
+
+endchoice
+
 config IPV6_SEG6_LWTUNNEL
 	bool "IPv6: Segment Routing Header encapsulation support"
 	depends on IPV6
