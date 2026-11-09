@@ -122,7 +122,8 @@ struct ip6_sf_list {
 struct ifmcaddr6 {
 	struct in6_addr		mca_addr;
 	struct inet6_dev	*idev;
-	struct ifmcaddr6	*next;
+	struct hlist_node	mca_list;	/* idev->mc_list */
+	struct ifmcaddr6	*next;		/* idev->mc_tomb only */
 	struct ip6_sf_list	*mca_sources;
 	struct ip6_sf_list	*mca_tomb;
 	unsigned int		mca_sfmode;
@@ -173,7 +174,7 @@ struct inet6_dev {
 
 	struct list_head	addr_list;
 
-	struct ifmcaddr6	*mc_list;
+	struct hlist_head	mc_list;
 	struct ifmcaddr6	*mc_tomb;
 	spinlock_t		mc_lock;
 

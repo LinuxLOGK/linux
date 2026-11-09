@@ -819,7 +819,7 @@ static void mld_clear_delrec(struct inet6_dev *idev)
 
 	/* clear dead sources, too */
 	read_lock_bh(&idev->lock);
-	for (pmc = idev->mc_list; pmc; pmc = pmc->next) {
+	hlist_for_each_entry(pmc, &idev->mc_list, mca_list) {
 		struct ip6_sf_list *psf, *psf_next;
 
 		spin_lock_bh(&pmc->mca_lock);
@@ -832,6 +832,19 @@ static void mld_clear_delrec(struct inet6_dev *idev)
 		}
 	}
 	read_unlock_bh(&idev->lock);
+}
+
+/* idev->mc_list walkers for open-coded iteration, idev->lock held */
+static inline struct ifmcaddr6 *mc_list_first(struct inet6_dev *idev)
+{
+	return hlist_entry_safe(idev->mc_list.first, struct ifmcaddr6,
+				mca_list);
+}
+
+static inline struct ifmcaddr6 *mc_list_next(struct ifmcaddr6 *mc)
+{
+	return hlist_entry_safe(mc->mca_list.next, struct ifmcaddr6,
+				mca_list);
 }
 
 static void mca_get(struct ifmcaddr6 *mc)
@@ -901,7 +914,7 @@ static int __ipv6_dev_mc_inc(struct net_device *dev,
 		return -ENODEV;
 	}
 
-	for (mc = idev->mc_list; mc; mc = mc->next) {
+	hlist_for_each_entry(mc, &idev->mc_list, mca_list) {
 		if (ipv6_addr_equal(&mc->mca_addr, addr)) {
 			mc->mca_users++;
 			write_unlock_bh(&idev->lock);
@@ -918,8 +931,7 @@ static int __ipv6_dev_mc_inc(struct net_device *dev,
 		return -ENOMEM;
 	}
 
-	mc->next = idev->mc_list;
-	idev->mc_list = mc;
+	hlist_add_head(&mc->mca_list, &idev->mc_list);
 
 	/* Hold this for the code below before we unlock,
 	 * it is already exposed via idev->mc_list.
@@ -944,15 +956,15 @@ EXPORT_SYMBOL(ipv6_dev_mc_inc);
  */
 int __ipv6_dev_mc_dec(struct inet6_dev *idev, const struct in6_addr *addr)
 {
-	struct ifmcaddr6 *ma, **map;
+	struct ifmcaddr6 *ma;
 
 	ASSERT_RTNL();
 
 	write_lock_bh(&idev->lock);
-	for (map = &idev->mc_list; (ma = *map) != NULL; map = &ma->next) {
+	hlist_for_each_entry(ma, &idev->mc_list, mca_list) {
 		if (ipv6_addr_equal(&ma->mca_addr, addr)) {
 			if (--ma->mca_users == 0) {
-				*map = ma->next;
+				hlist_del_init(&ma->mca_list);
 				write_unlock_bh(&idev->lock);
 
 				igmp6_group_dropped(ma);
@@ -1001,7 +1013,7 @@ bool ipv6_chk_mcast_addr(struct net_device *dev, const struct in6_addr *group,
 	idev = __in6_dev_get(dev);
 	if (idev) {
 		read_lock_bh(&idev->lock);
-		for (mc = idev->mc_list; mc; mc = mc->next) {
+		hlist_for_each_entry(mc, &idev->mc_list, mca_list) {
 			if (ipv6_addr_equal(&mc->mca_addr, group))
 				break;
 		}
@@ -1419,13 +1431,13 @@ int igmp6_event_query(struct sk_buff *skb)
 
 	read_lock_bh(&idev->lock);
 	if (group_type == IPV6_ADDR_ANY) {
-		for (ma = idev->mc_list; ma; ma = ma->next) {
+		hlist_for_each_entry(ma, &idev->mc_list, mca_list) {
 			spin_lock_bh(&ma->mca_lock);
 			igmp6_group_queried(ma, max_delay);
 			spin_unlock_bh(&ma->mca_lock);
 		}
 	} else {
-		for (ma = idev->mc_list; ma; ma = ma->next) {
+		hlist_for_each_entry(ma, &idev->mc_list, mca_list) {
 			if (!ipv6_addr_equal(group, &ma->mca_addr))
 				continue;
 			spin_lock_bh(&ma->mca_lock);
@@ -1489,7 +1501,7 @@ int igmp6_event_report(struct sk_buff *skb)
 	 */
 
 	read_lock_bh(&idev->lock);
-	for (ma = idev->mc_list; ma; ma = ma->next) {
+	hlist_for_each_entry(ma, &idev->mc_list, mca_list) {
 		if (ipv6_addr_equal(&ma->mca_addr, &mld->mld_mca)) {
 			spin_lock(&ma->mca_lock);
 			if (del_timer(&ma->mca_timer))
@@ -1856,7 +1868,7 @@ static void mld_send_report(struct inet6_dev *idev, struct ifmcaddr6 *pmc)
 
 	read_lock_bh(&idev->lock);
 	if (!pmc) {
-		for (pmc = idev->mc_list; pmc; pmc = pmc->next) {
+		hlist_for_each_entry(pmc, &idev->mc_list, mca_list) {
 			if (pmc->mca_flags & MAF_NOREPORT)
 				continue;
 			spin_lock_bh(&pmc->mca_lock);
@@ -1946,7 +1958,7 @@ static void mld_send_cr(struct inet6_dev *idev)
 	spin_unlock(&idev->mc_lock);
 
 	/* change recs */
-	for (pmc = idev->mc_list; pmc; pmc = pmc->next) {
+	hlist_for_each_entry(pmc, &idev->mc_list, mca_list) {
 		spin_lock_bh(&pmc->mca_lock);
 		if (pmc->mca_sfcount[MCAST_EXCLUDE]) {
 			type = MLD2_BLOCK_OLD_SOURCES;
@@ -2082,7 +2094,7 @@ static void mld_send_initial_cr(struct inet6_dev *idev)
 
 	skb = NULL;
 	read_lock_bh(&idev->lock);
-	for (pmc = idev->mc_list; pmc; pmc = pmc->next) {
+	hlist_for_each_entry(pmc, &idev->mc_list, mca_list) {
 		spin_lock_bh(&pmc->mca_lock);
 		if (pmc->mca_sfcount[MCAST_EXCLUDE])
 			type = MLD2_CHANGE_TO_EXCLUDE;
@@ -2170,7 +2182,7 @@ static int ip6_mc_del_src(struct inet6_dev *idev, const struct in6_addr *pmca,
 	if (!idev)
 		return -ENODEV;
 	read_lock_bh(&idev->lock);
-	for (pmc = idev->mc_list; pmc; pmc = pmc->next) {
+	hlist_for_each_entry(pmc, &idev->mc_list, mca_list) {
 		if (ipv6_addr_equal(pmca, &pmc->mca_addr))
 			break;
 	}
@@ -2334,7 +2346,7 @@ static int ip6_mc_add_src(struct inet6_dev *idev, const struct in6_addr *pmca,
 	if (!idev)
 		return -ENODEV;
 	read_lock_bh(&idev->lock);
-	for (pmc = idev->mc_list; pmc; pmc = pmc->next) {
+	hlist_for_each_entry(pmc, &idev->mc_list, mca_list) {
 		if (ipv6_addr_equal(pmca, &pmc->mca_addr))
 			break;
 	}
@@ -2514,7 +2526,7 @@ void ipv6_mc_unmap(struct inet6_dev *idev)
 	/* Install multicast list, except for all-nodes (already installed) */
 
 	read_lock_bh(&idev->lock);
-	for (i = idev->mc_list; i; i = i->next)
+	hlist_for_each_entry(i, &idev->mc_list, mca_list)
 		igmp6_group_dropped(i);
 	read_unlock_bh(&idev->lock);
 }
@@ -2534,7 +2546,7 @@ void ipv6_mc_down(struct inet6_dev *idev)
 
 	read_lock_bh(&idev->lock);
 
-	for (i = idev->mc_list; i; i = i->next)
+	hlist_for_each_entry(i, &idev->mc_list, mca_list)
 		igmp6_group_dropped(i);
 
 	/* Should stop timer after group drop. or we will
@@ -2565,7 +2577,7 @@ void ipv6_mc_up(struct inet6_dev *idev)
 
 	read_lock_bh(&idev->lock);
 	ipv6_mc_reset(idev);
-	for (i = idev->mc_list; i; i = i->next) {
+	hlist_for_each_entry(i, &idev->mc_list, mca_list) {
 		mld_del_delrec(idev, i);
 		igmp6_group_added(i);
 	}
@@ -2577,6 +2589,7 @@ void ipv6_mc_up(struct inet6_dev *idev)
 void ipv6_mc_init_dev(struct inet6_dev *idev)
 {
 	write_lock_bh(&idev->lock);
+	INIT_HLIST_HEAD(&idev->mc_list);
 	spin_lock_init(&idev->mc_lock);
 	idev->mc_gq_running = 0;
 	timer_setup(&idev->mc_gq_timer, mld_gq_timer_expire, 0);
@@ -2611,8 +2624,8 @@ void ipv6_mc_destroy_dev(struct inet6_dev *idev)
 		__ipv6_dev_mc_dec(idev, &in6addr_linklocal_allrouters);
 
 	write_lock_bh(&idev->lock);
-	while ((i = idev->mc_list) != NULL) {
-		idev->mc_list = i->next;
+	while ((i = mc_list_first(idev)) != NULL) {
+		hlist_del_init(&i->mca_list);
 
 		write_unlock_bh(&idev->lock);
 		ip6_mc_clear_src(i);
@@ -2630,7 +2643,7 @@ static void ipv6_mc_rejoin_groups(struct inet6_dev *idev)
 
 	if (mld_in_v1_mode(idev)) {
 		read_lock_bh(&idev->lock);
-		for (pmc = idev->mc_list; pmc; pmc = pmc->next)
+		hlist_for_each_entry(pmc, &idev->mc_list, mca_list)
 			igmp6_join_group(pmc);
 		read_unlock_bh(&idev->lock);
 	} else
@@ -2682,7 +2695,7 @@ static inline struct ifmcaddr6 *igmp6_mc_get_first(struct seq_file *seq)
 		if (!idev)
 			continue;
 		read_lock_bh(&idev->lock);
-		im = idev->mc_list;
+		im = mc_list_first(idev);
 		if (im) {
 			state->idev = idev;
 			break;
@@ -2696,7 +2709,7 @@ static struct ifmcaddr6 *igmp6_mc_get_next(struct seq_file *seq, struct ifmcaddr
 {
 	struct igmp6_mc_iter_state *state = igmp6_mc_seq_private(seq);
 
-	im = im->next;
+	im = mc_list_next(im);
 	while (!im) {
 		if (likely(state->idev))
 			read_unlock_bh(&state->idev->lock);
@@ -2710,7 +2723,7 @@ static struct ifmcaddr6 *igmp6_mc_get_next(struct seq_file *seq, struct ifmcaddr
 		if (!state->idev)
 			continue;
 		read_lock_bh(&state->idev->lock);
-		im = state->idev->mc_list;
+		im = mc_list_first(state->idev);
 	}
 	return im;
 }
@@ -2798,7 +2811,7 @@ static inline struct ip6_sf_list *igmp6_mcf_get_first(struct seq_file *seq)
 		if (unlikely(idev == NULL))
 			continue;
 		read_lock_bh(&idev->lock);
-		im = idev->mc_list;
+		im = mc_list_first(idev);
 		if (likely(im)) {
 			spin_lock_bh(&im->mca_lock);
 			psf = im->mca_sources;
@@ -2821,7 +2834,7 @@ static struct ip6_sf_list *igmp6_mcf_get_next(struct seq_file *seq, struct ip6_s
 	psf = psf->sf_next;
 	while (!psf) {
 		spin_unlock_bh(&state->im->mca_lock);
-		state->im = state->im->next;
+		state->im = mc_list_next(state->im);
 		while (!state->im) {
 			if (likely(state->idev))
 				read_unlock_bh(&state->idev->lock);
@@ -2835,7 +2848,7 @@ static struct ip6_sf_list *igmp6_mcf_get_next(struct seq_file *seq, struct ip6_s
 			if (!state->idev)
 				continue;
 			read_lock_bh(&state->idev->lock);
-			state->im = state->idev->mc_list;
+			state->im = mc_list_first(state->idev);
 		}
 		if (!state->im)
 			break;

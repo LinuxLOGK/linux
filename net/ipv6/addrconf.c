@@ -5093,13 +5093,13 @@ next:
 		fillargs->event = RTM_GETMULTICAST;
 
 		/* multicast address */
-		for (ifmca = idev->mc_list; ifmca;
-		     ifmca = ifmca->next, ip_idx++) {
-			if (ip_idx < s_ip_idx)
-				continue;
-			err = inet6_fill_ifmcaddr(skb, ifmca, fillargs);
-			if (err < 0)
-				break;
+		hlist_for_each_entry(ifmca, &idev->mc_list, mca_list) {
+			if (ip_idx >= s_ip_idx) {
+				err = inet6_fill_ifmcaddr(skb, ifmca, fillargs);
+				if (err < 0)
+					break;
+			}
+			ip_idx++;
 		}
 		break;
 	case ANYCAST_ADDR:
