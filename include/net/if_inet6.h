@@ -172,6 +172,17 @@ struct ipv6_devstat {
 	DEFINE_SNMP_STAT_ATOMIC(struct icmpv6msg_mib_device, icmpv6msgdev);
 };
 
+#ifdef CONFIG_IPV6_MC_IF_LOOKUP_DEBUG
+/* Interface multicast group lookup diagnostics, see /proc/net/mc6_if_lookup */
+struct ip6_mc_if_dbg {
+	atomic_long_t		lookups;	/* group searches */
+	atomic_long_t		hash_lookups;	/* ... that used mc_hash */
+	atomic_long_t		compares;	/* group addresses compared */
+	atomic_long_t		builds;		/* mc_hash tables published */
+	atomic_long_t		alloc_fails;	/* mc_hash allocations failed */
+};
+#endif
+
 struct inet6_dev {
 	struct net_device	*dev;
 
@@ -224,6 +235,10 @@ struct inet6_dev {
 
 	unsigned long		tstamp; /* ipv6InterfaceTable update timestamp */
 	struct rcu_head		rcu;
+#ifdef CONFIG_IPV6_MC_IF_LOOKUP_DEBUG
+	/* kept last: the fields above have the same offsets in every build */
+	struct ip6_mc_if_dbg	mc_dbg;
+#endif
 };
 
 static inline void ipv6_eth_mc_map(const struct in6_addr *addr, char *buf)

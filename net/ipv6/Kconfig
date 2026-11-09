@@ -328,6 +328,22 @@ config IPV6_MC_IF_HASH_THRESH
 
 	  If unsure, keep the default of 16.
 
+config IPV6_MC_IF_LOOKUP_DEBUG
+	bool "IPv6: interface multicast group lookup diagnostics"
+	depends on PROC_FS
+	help
+	  Count interface multicast group lookups and address comparisons
+	  per device, check that the group list and its lookup index agree
+	  after every update, and report the state of each device in
+	  /proc/net/mc6_if_lookup.
+
+	  This adds atomic counters to every lookup and grows struct
+	  inet6_dev.  It is meant for correctness demonstrations and
+	  debugging; do not enable it in kernels used for performance
+	  measurements.
+
+	  If unsure, say N.
+
 config IPV6_SEG6_LWTUNNEL
 	bool "IPv6: Segment Routing Header encapsulation support"
 	depends on IPV6
