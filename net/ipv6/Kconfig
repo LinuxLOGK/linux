@@ -304,4 +304,27 @@ config IPV6_SEG6_BPF
 	depends on IPV6_SEG6_LWTUNNEL
 	depends on IPV6 = y
 
+config IPV6_MC_SOCK_HASH
+	bool "IPv6: hash table for per-socket multicast memberships"
+	depends on IPV6
+	default n
+	help
+	  Look up a socket's IPv6 multicast group memberships through a
+	  per-socket hash table keyed by group address, instead of walking
+	  the socket's membership list on every received multicast packet.
+	  The table is allocated only for sockets that join many groups.
+
+	  If unsure, say N.
+
+config IPV6_MC_SOCK_HASH_THRESH
+	int "IPv6: memberships per socket before the hash table is used"
+	depends on IPV6_MC_SOCK_HASH
+	range 1 64
+	default 4
+	help
+	  Number of multicast group memberships on a single socket at
+	  which the per-socket hash table is created. Sockets with fewer
+	  memberships keep using the plain membership list, which is
+	  cheaper to walk when it is short.
+
 endif # IPV6

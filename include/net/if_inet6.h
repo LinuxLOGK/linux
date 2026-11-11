@@ -95,10 +95,12 @@ struct ip6_sf_socklist {
 #define IP6_SFBLOCK	10	/* allocate this many at once */
 
 struct ipv6_mc_socklist {
+	/* addr, hnode, sfmode and sflock are read by inet6_mc_check() */
 	struct in6_addr		addr;
+	struct hlist_node	hnode;		/* np->mc_hash bucket */
+	struct hlist_node	node;		/* np->ipv6_mc_list */
 	int			ifindex;
 	unsigned int		sfmode;		/* MCAST_{INCLUDE,EXCLUDE} */
-	struct hlist_node	node;		/* np->ipv6_mc_list */
 	rwlock_t		sflock;
 	struct ip6_sf_socklist	*sflist;
 	struct rcu_head		rcu;

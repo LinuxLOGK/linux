@@ -191,6 +191,7 @@ struct tcp6_request_sock {
 };
 
 struct ipv6_mc_socklist;
+struct ipv6_mc_sockhash;
 struct ipv6_ac_socklist;
 struct ipv6_fl_socklist;
 
@@ -290,6 +291,8 @@ struct ipv6_pinfo {
 	__u32			rx_dst_cookie;
 
 	struct hlist_head	ipv6_mc_list;
+	struct ipv6_mc_sockhash	__rcu *mc_hash;
+	unsigned int		mc_count;
 	struct ipv6_ac_socklist	*ipv6_ac_list;
 	struct ipv6_fl_socklist __rcu *ipv6_fl_list;
 

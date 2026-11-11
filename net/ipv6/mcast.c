@@ -161,6 +161,7 @@ static int __ipv6_sock_mc_join(struct sock *sk, int ifindex,
 		return -ENOMEM;
 
 	INIT_HLIST_NODE(&mc_lst->node);
+	INIT_HLIST_NODE(&mc_lst->hnode);
 	mc_lst->addr = *addr;
 
 	if (ifindex == 0) {
@@ -195,6 +196,7 @@ static int __ipv6_sock_mc_join(struct sock *sk, int ifindex,
 	}
 
 	hlist_add_head_rcu(&mc_lst->node, &np->ipv6_mc_list);
+	np->mc_count++;
 
 	return 0;
 }
@@ -231,6 +233,7 @@ int ipv6_sock_mc_drop(struct sock *sk, int ifindex, const struct in6_addr *addr)
 			struct net_device *dev;
 
 			hlist_del_rcu(&mc_lst->node);
+			np->mc_count--;
 
 			dev = __dev_get_by_index(net, mc_lst->ifindex);
 			if (dev) {
@@ -296,6 +299,7 @@ void __ipv6_sock_mc_close(struct sock *sk)
 		struct net_device *dev;
 
 		hlist_del_rcu(&mc_lst->node);
+		np->mc_count--;
 
 		dev = __dev_get_by_index(net, mc_lst->ifindex);
 		if (dev) {
