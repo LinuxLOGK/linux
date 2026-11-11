@@ -114,9 +114,10 @@ int sysctl_mld_qrv __read_mostly = MLD_QRV_DEFAULT;
  */
 
 #define for_each_pmc_rcu(np, pmc)				\
-	for (pmc = rcu_dereference(np->ipv6_mc_list);		\
-	     pmc != NULL;					\
-	     pmc = rcu_dereference(pmc->next))
+	hlist_for_each_entry_rcu(pmc, &(np)->ipv6_mc_list, node)
+
+#define for_each_pmc_rtnl(np, pmc)				\
+	hlist_for_each_entry(pmc, &(np)->ipv6_mc_list, node)
 
 static int unsolicited_report_interval(struct inet6_dev *idev)
 {
@@ -159,7 +160,7 @@ static int __ipv6_sock_mc_join(struct sock *sk, int ifindex,
 	if (!mc_lst)
 		return -ENOMEM;
 
-	mc_lst->next = NULL;
+	INIT_HLIST_NODE(&mc_lst->node);
 	mc_lst->addr = *addr;
 
 	if (ifindex == 0) {
@@ -193,8 +194,7 @@ static int __ipv6_sock_mc_join(struct sock *sk, int ifindex,
 		return err;
 	}
 
-	mc_lst->next = np->ipv6_mc_list;
-	rcu_assign_pointer(np->ipv6_mc_list, mc_lst);
+	hlist_add_head_rcu(&mc_lst->node, &np->ipv6_mc_list);
 
 	return 0;
 }
@@ -218,7 +218,6 @@ int ipv6_sock_mc_drop(struct sock *sk, int ifindex, const struct in6_addr *addr)
 {
 	struct ipv6_pinfo *np = inet6_sk(sk);
 	struct ipv6_mc_socklist *mc_lst;
-	struct ipv6_mc_socklist __rcu **lnk;
 	struct net *net = sock_net(sk);
 
 	ASSERT_RTNL();
@@ -226,14 +225,12 @@ int ipv6_sock_mc_drop(struct sock *sk, int ifindex, const struct in6_addr *addr)
 	if (!ipv6_addr_is_multicast(addr))
 		return -EINVAL;
 
-	for (lnk = &np->ipv6_mc_list;
-	     (mc_lst = rtnl_dereference(*lnk)) != NULL;
-	      lnk = &mc_lst->next) {
+	for_each_pmc_rtnl(np, mc_lst) {
 		if ((ifindex == 0 || mc_lst->ifindex == ifindex) &&
 		    ipv6_addr_equal(&mc_lst->addr, addr)) {
 			struct net_device *dev;
 
-			*lnk = mc_lst->next;
+			hlist_del_rcu(&mc_lst->node);
 
 			dev = __dev_get_by_index(net, mc_lst->ifindex);
 			if (dev) {
@@ -290,14 +287,15 @@ void __ipv6_sock_mc_close(struct sock *sk)
 {
 	struct ipv6_pinfo *np = inet6_sk(sk);
 	struct ipv6_mc_socklist *mc_lst;
+	struct hlist_node *tmp;
 	struct net *net = sock_net(sk);
 
 	ASSERT_RTNL();
 
-	while ((mc_lst = rtnl_dereference(np->ipv6_mc_list)) != NULL) {
+	hlist_for_each_entry_safe(mc_lst, tmp, &np->ipv6_mc_list, node) {
 		struct net_device *dev;
 
-		np->ipv6_mc_list = mc_lst->next;
+		hlist_del_rcu(&mc_lst->node);
 
 		dev = __dev_get_by_index(net, mc_lst->ifindex);
 		if (dev) {
@@ -318,7 +316,7 @@ void ipv6_sock_mc_close(struct sock *sk)
 {
 	struct ipv6_pinfo *np = inet6_sk(sk);
 
-	if (!rcu_access_pointer(np->ipv6_mc_list))
+	if (hlist_empty(&np->ipv6_mc_list))
 		return;
 	rtnl_lock();
 	__ipv6_sock_mc_close(sk);

@@ -98,7 +98,7 @@ struct ipv6_mc_socklist {
 	struct in6_addr		addr;
 	int			ifindex;
 	unsigned int		sfmode;		/* MCAST_{INCLUDE,EXCLUDE} */
-	struct ipv6_mc_socklist __rcu *next;
+	struct hlist_node	node;		/* np->ipv6_mc_list */
 	rwlock_t		sflock;
 	struct ip6_sf_socklist	*sflist;
 	struct rcu_head		rcu;
