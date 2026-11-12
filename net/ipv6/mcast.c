@@ -874,10 +874,11 @@ static inline struct ifmcaddr6 *mc_list_next(struct ifmcaddr6 *mc)
 #define IPV6_MC_IF_HASH_THRESH	UINT_MAX
 #endif
 
-static u32 ip6_mc_hash_salt __read_mostly;
+static u32 ip6_mc_if_hash_salt __read_mostly;
 
 /* idev->lock held.  NULL means "search mc_list". */
-static inline struct hlist_head *ip6_mc_hash_table(const struct inet6_dev *idev)
+static inline struct hlist_head *
+ip6_mc_if_hash_table(const struct inet6_dev *idev)
 {
 	if (!IS_ENABLED(CONFIG_IPV6_MC_IF_LOOKUP_HASH))
 		return NULL;
@@ -885,11 +886,11 @@ static inline struct hlist_head *ip6_mc_hash_table(const struct inet6_dev *idev)
 	return idev->mc_hash;
 }
 
-static inline struct hlist_head *ip6_mc_hash_bucket(struct hlist_head *hash,
-						    const struct in6_addr *addr)
+static inline struct hlist_head *
+ip6_mc_if_hash_bucket(struct hlist_head *hash, const struct in6_addr *addr)
 {
 	u32 h = jhash2((__force const u32 *)addr->s6_addr32,
-		       ARRAY_SIZE(addr->s6_addr32), ip6_mc_hash_salt);
+		       ARRAY_SIZE(addr->s6_addr32), ip6_mc_if_hash_salt);
 
 	return &hash[h & (IPV6_MC_IF_HASH_SIZE - 1)];
 }
@@ -899,8 +900,8 @@ static inline struct hlist_head *ip6_mc_hash_bucket(struct hlist_head *hash,
  * atomics to every lookup and an O(groups) check to every update, so this
  * option must stay off in kernels used for performance measurements.
  */
-static inline void ip6_mc_dbg_lookup(struct inet6_dev *idev, bool hashed,
-				     unsigned int compares)
+static inline void ip6_mc_if_dbg_lookup(struct inet6_dev *idev, bool hashed,
+					unsigned int compares)
 {
 	atomic_long_inc(&idev->mc_dbg.lookups);
 	if (hashed)
@@ -908,13 +909,13 @@ static inline void ip6_mc_dbg_lookup(struct inet6_dev *idev, bool hashed,
 	atomic_long_add(compares, &idev->mc_dbg.compares);
 }
 
-static inline void ip6_mc_dbg_alloc(struct inet6_dev *idev, bool ok)
+static inline void ip6_mc_if_dbg_alloc(struct inet6_dev *idev, bool ok)
 {
 	if (!ok)
 		atomic_long_inc(&idev->mc_dbg.alloc_fails);
 }
 
-static inline void ip6_mc_dbg_build(struct inet6_dev *idev)
+static inline void ip6_mc_if_dbg_build(struct inet6_dev *idev)
 {
 	atomic_long_inc(&idev->mc_dbg.builds);
 }
@@ -922,9 +923,9 @@ static inline void ip6_mc_dbg_build(struct inet6_dev *idev)
 /* Check that mc_list, mc_count and the index agree.  idev->lock write
  * held.
  */
-static void ip6_mc_dbg_verify(struct inet6_dev *idev)
+static void ip6_mc_if_dbg_verify(struct inet6_dev *idev)
 {
-	struct hlist_head *hash = ip6_mc_hash_table(idev);
+	struct hlist_head *hash = ip6_mc_if_hash_table(idev);
 	unsigned int on_list = 0, hashed = 0, in_buckets = 0, misplaced = 0;
 	struct ifmcaddr6 *mc;
 	unsigned int i;
@@ -939,8 +940,8 @@ static void ip6_mc_dbg_verify(struct inet6_dev *idev)
 		for (i = 0; i < IPV6_MC_IF_HASH_SIZE; i++) {
 			hlist_for_each_entry(mc, &hash[i], mca_hnode) {
 				in_buckets++;
-				if (ip6_mc_hash_bucket(hash, &mc->mca_addr) !=
-				    &hash[i])
+				if (&hash[i] !=
+				    ip6_mc_if_hash_bucket(hash, &mc->mca_addr))
 					misplaced++;
 			}
 		}
@@ -954,20 +955,20 @@ static void ip6_mc_dbg_verify(struct inet6_dev *idev)
 		  misplaced, !!hash);
 }
 #else
-static inline void ip6_mc_dbg_lookup(struct inet6_dev *idev, bool hashed,
-				     unsigned int compares)
+static inline void ip6_mc_if_dbg_lookup(struct inet6_dev *idev, bool hashed,
+					unsigned int compares)
 {
 }
 
-static inline void ip6_mc_dbg_alloc(struct inet6_dev *idev, bool ok)
+static inline void ip6_mc_if_dbg_alloc(struct inet6_dev *idev, bool ok)
 {
 }
 
-static inline void ip6_mc_dbg_build(struct inet6_dev *idev)
+static inline void ip6_mc_if_dbg_build(struct inet6_dev *idev)
 {
 }
 
-static inline void ip6_mc_dbg_verify(struct inet6_dev *idev)
+static inline void ip6_mc_if_dbg_verify(struct inet6_dev *idev)
 {
 }
 #endif
@@ -975,15 +976,15 @@ static inline void ip6_mc_dbg_verify(struct inet6_dev *idev)
 /* Find the group @addr on the interface.  idev->lock held, read or write.
  * A group address appears at most once on mc_list.
  */
-static struct ifmcaddr6 *ip6_mc_find(struct inet6_dev *idev,
-				     const struct in6_addr *addr)
+static struct ifmcaddr6 *ip6_mc_if_find(struct inet6_dev *idev,
+					const struct in6_addr *addr)
 {
-	struct hlist_head *hash = ip6_mc_hash_table(idev);
+	struct hlist_head *hash = ip6_mc_if_hash_table(idev);
 	unsigned int compares = 0;	/* only read by the diagnostics */
 	struct ifmcaddr6 *mc;
 
 	if (hash) {
-		hlist_for_each_entry(mc, ip6_mc_hash_bucket(hash, addr),
+		hlist_for_each_entry(mc, ip6_mc_if_hash_bucket(hash, addr),
 				     mca_hnode) {
 			compares++;
 			if (ipv6_addr_equal(&mc->mca_addr, addr))
@@ -997,25 +998,25 @@ static struct ifmcaddr6 *ip6_mc_find(struct inet6_dev *idev,
 		}
 	}
 
-	ip6_mc_dbg_lookup(idev, !!hash, compares);
+	ip6_mc_if_dbg_lookup(idev, !!hash, compares);
 	return mc;
 }
 
 /* Index a group that was just added to mc_list.  idev->lock write held. */
-static inline void ip6_mc_hash_add(struct inet6_dev *idev,
-				   struct ifmcaddr6 *mc)
+static inline void ip6_mc_if_hash_add(struct inet6_dev *idev,
+				      struct ifmcaddr6 *mc)
 {
-	struct hlist_head *hash = ip6_mc_hash_table(idev);
+	struct hlist_head *hash = ip6_mc_if_hash_table(idev);
 
 	if (hash)
 		hlist_add_head(&mc->mca_hnode,
-			       ip6_mc_hash_bucket(hash, &mc->mca_addr));
+			       ip6_mc_if_hash_bucket(hash, &mc->mca_addr));
 }
 
 /* Unindex a group that is being removed from mc_list.  idev->lock write
  * held.  A group that is not hashed is left alone.
  */
-static inline void ip6_mc_hash_del(struct ifmcaddr6 *mc)
+static inline void ip6_mc_if_hash_del(struct ifmcaddr6 *mc)
 {
 	if (IS_ENABLED(CONFIG_IPV6_MC_IF_LOOKUP_HASH))
 		hlist_del_init(&mc->mca_hnode);
@@ -1024,7 +1025,7 @@ static inline void ip6_mc_hash_del(struct ifmcaddr6 *mc)
 /* Would one more group on @idev make it eligible for a table it does not
  * have yet?  RTNL held.
  */
-static inline bool ip6_mc_hash_wanted(const struct inet6_dev *idev)
+static inline bool ip6_mc_if_hash_wanted(const struct inet6_dev *idev)
 {
 	return IS_ENABLED(CONFIG_IPV6_MC_IF_LOOKUP_HASH) && !idev->mc_hash &&
 	       idev->mc_count + 1 >= IPV6_MC_IF_HASH_THRESH;
@@ -1035,9 +1036,9 @@ static inline bool ip6_mc_hash_wanted(const struct inet6_dev *idev)
  * so this must not sleep.  Failure is not an error: the caller keeps
  * searching mc_list and a later join tries again.
  */
-static struct hlist_head *ip6_mc_hash_alloc(void)
+static struct hlist_head *ip6_mc_if_hash_alloc(void)
 {
-	net_get_random_once(&ip6_mc_hash_salt, sizeof(ip6_mc_hash_salt));
+	net_get_random_once(&ip6_mc_if_hash_salt, sizeof(ip6_mc_if_hash_salt));
 
 	return kcalloc(IPV6_MC_IF_HASH_SIZE, sizeof(struct hlist_head),
 		       GFP_ATOMIC | __GFP_NOWARN);
@@ -1046,14 +1047,14 @@ static struct hlist_head *ip6_mc_hash_alloc(void)
 /* Hash every group on mc_list into the empty table @hash, then publish
  * it.  idev->lock write held, so no lookup can see a half-built table.
  */
-static void ip6_mc_hash_publish(struct inet6_dev *idev,
-				struct hlist_head *hash)
+static void ip6_mc_if_hash_publish(struct inet6_dev *idev,
+				   struct hlist_head *hash)
 {
 	struct ifmcaddr6 *mc;
 
 	hlist_for_each_entry(mc, &idev->mc_list, mca_list)
 		hlist_add_head(&mc->mca_hnode,
-			       ip6_mc_hash_bucket(hash, &mc->mca_addr));
+			       ip6_mc_if_hash_bucket(hash, &mc->mca_addr));
 
 	idev->mc_hash = hash;
 }
@@ -1062,7 +1063,7 @@ static void ip6_mc_hash_publish(struct inet6_dev *idev,
  * Later lookups search mc_list.  Returns the bucket array, which the
  * caller frees after dropping the lock.
  */
-static struct hlist_head *ip6_mc_hash_detach(struct inet6_dev *idev)
+static struct hlist_head *ip6_mc_if_hash_detach(struct inet6_dev *idev)
 {
 	struct hlist_head *hash = idev->mc_hash;
 	struct ifmcaddr6 *mc;
@@ -1143,9 +1144,9 @@ static int __ipv6_dev_mc_inc(struct net_device *dev,
 	 * join still succeeds and lookups keep searching mc_list; the next
 	 * join that adds a group tries again.
 	 */
-	if (ip6_mc_hash_wanted(idev)) {
-		new_hash = ip6_mc_hash_alloc();
-		ip6_mc_dbg_alloc(idev, !!new_hash);
+	if (ip6_mc_if_hash_wanted(idev)) {
+		new_hash = ip6_mc_if_hash_alloc();
+		ip6_mc_if_dbg_alloc(idev, !!new_hash);
 	}
 
 	write_lock_bh(&idev->lock);
@@ -1156,7 +1157,7 @@ static int __ipv6_dev_mc_inc(struct net_device *dev,
 		return -ENODEV;
 	}
 
-	mc = ip6_mc_find(idev, addr);
+	mc = ip6_mc_if_find(idev, addr);
 	if (mc) {
 		mc->mca_users++;
 		write_unlock_bh(&idev->lock);
@@ -1179,16 +1180,16 @@ static int __ipv6_dev_mc_inc(struct net_device *dev,
 
 	/* new_hash is only set when this new group reaches the threshold on
 	 * an interface without a table: RTNL keeps mc_count and mc_hash
-	 * stable since ip6_mc_hash_wanted().  Publishing hashes every group
+	 * stable since ip6_mc_if_hash_wanted().  Publishing hashes every group
 	 * on mc_list, the new one included.
 	 */
 	if (new_hash) {
-		ip6_mc_hash_publish(idev, new_hash);
-		ip6_mc_dbg_build(idev);
+		ip6_mc_if_hash_publish(idev, new_hash);
+		ip6_mc_if_dbg_build(idev);
 	} else {
-		ip6_mc_hash_add(idev, mc);
+		ip6_mc_if_hash_add(idev, mc);
 	}
-	ip6_mc_dbg_verify(idev);
+	ip6_mc_if_dbg_verify(idev);
 
 	/* Hold this for the code below before we unlock,
 	 * it is already exposed via idev->mc_list.
@@ -1218,7 +1219,7 @@ int __ipv6_dev_mc_dec(struct inet6_dev *idev, const struct in6_addr *addr)
 	ASSERT_RTNL();
 
 	write_lock_bh(&idev->lock);
-	ma = ip6_mc_find(idev, addr);
+	ma = ip6_mc_if_find(idev, addr);
 	if (!ma) {
 		write_unlock_bh(&idev->lock);
 		return -ENOENT;
@@ -1229,9 +1230,9 @@ int __ipv6_dev_mc_dec(struct inet6_dev *idev, const struct in6_addr *addr)
 		 * reference that kept the group on them is dropped
 		 */
 		hlist_del_init(&ma->mca_list);
-		ip6_mc_hash_del(ma);
+		ip6_mc_if_hash_del(ma);
 		idev->mc_count--;
-		ip6_mc_dbg_verify(idev);
+		ip6_mc_if_dbg_verify(idev);
 		write_unlock_bh(&idev->lock);
 
 		igmp6_group_dropped(ma);
@@ -1276,7 +1277,7 @@ bool ipv6_chk_mcast_addr(struct net_device *dev, const struct in6_addr *group,
 	idev = __in6_dev_get(dev);
 	if (idev) {
 		read_lock_bh(&idev->lock);
-		mc = ip6_mc_find(idev, group);
+		mc = ip6_mc_if_find(idev, group);
 		if (mc) {
 			if (src_addr && !ipv6_addr_any(src_addr)) {
 				struct ip6_sf_list *psf;
@@ -2442,7 +2443,7 @@ static int ip6_mc_del_src(struct inet6_dev *idev, const struct in6_addr *pmca,
 	if (!idev)
 		return -ENODEV;
 	read_lock_bh(&idev->lock);
-	pmc = ip6_mc_find(idev, pmca);
+	pmc = ip6_mc_if_find(idev, pmca);
 	if (!pmc) {
 		/* MCA not found?? bug */
 		read_unlock_bh(&idev->lock);
@@ -2603,7 +2604,7 @@ static int ip6_mc_add_src(struct inet6_dev *idev, const struct in6_addr *pmca,
 	if (!idev)
 		return -ENODEV;
 	read_lock_bh(&idev->lock);
-	pmc = ip6_mc_find(idev, pmca);
+	pmc = ip6_mc_if_find(idev, pmca);
 	if (!pmc) {
 		/* MCA not found?? bug */
 		read_unlock_bh(&idev->lock);
@@ -2885,8 +2886,8 @@ void ipv6_mc_destroy_dev(struct inet6_dev *idev)
 	 * searches what is left of mc_list and never follows a bucket to a
 	 * group that is gone.
 	 */
-	hash = ip6_mc_hash_detach(idev);
-	ip6_mc_dbg_verify(idev);
+	hash = ip6_mc_if_hash_detach(idev);
+	ip6_mc_if_dbg_verify(idev);
 	while ((i = mc_list_first(idev)) != NULL) {
 		hlist_del_init(&i->mca_list);
 		idev->mc_count--;
@@ -3197,7 +3198,7 @@ static const struct seq_operations igmp6_mcf_seq_ops = {
 
 #ifdef CONFIG_IPV6_MC_IF_LOOKUP_DEBUG
 /* /proc/net/mc6_if_lookup: one line per device of this namespace */
-static int ip6_mc_dbg_seq_show(struct seq_file *seq, void *v)
+static int ip6_mc_if_dbg_seq_show(struct seq_file *seq, void *v)
 {
 	struct net *net = seq_file_single_net(seq);
 	struct net_device *dev;
@@ -3221,7 +3222,7 @@ static int ip6_mc_dbg_seq_show(struct seq_file *seq, void *v)
 
 		read_lock_bh(&idev->lock);
 		groups = idev->mc_count;
-		hash = ip6_mc_hash_table(idev);
+		hash = ip6_mc_if_hash_table(idev);
 		if (hash) {
 			for (i = 0; i < IPV6_MC_IF_HASH_SIZE; i++) {
 				unsigned int chain = 0;
@@ -3251,25 +3252,25 @@ static int ip6_mc_dbg_seq_show(struct seq_file *seq, void *v)
 	return 0;
 }
 
-static int __net_init ip6_mc_dbg_proc_init(struct net *net)
+static int __net_init ip6_mc_if_dbg_proc_init(struct net *net)
 {
 	if (!proc_create_net_single("mc6_if_lookup", 0444, net->proc_net,
-				    ip6_mc_dbg_seq_show, NULL))
+				    ip6_mc_if_dbg_seq_show, NULL))
 		return -ENOMEM;
 	return 0;
 }
 
-static void __net_exit ip6_mc_dbg_proc_exit(struct net *net)
+static void __net_exit ip6_mc_if_dbg_proc_exit(struct net *net)
 {
 	remove_proc_entry("mc6_if_lookup", net->proc_net);
 }
 #else
-static inline int ip6_mc_dbg_proc_init(struct net *net)
+static inline int ip6_mc_if_dbg_proc_init(struct net *net)
 {
 	return 0;
 }
 
-static inline void ip6_mc_dbg_proc_exit(struct net *net)
+static inline void ip6_mc_if_dbg_proc_exit(struct net *net)
 {
 }
 #endif
@@ -3286,7 +3287,7 @@ static int __net_init igmp6_proc_init(struct net *net)
 			&igmp6_mcf_seq_ops,
 			sizeof(struct igmp6_mcf_iter_state)))
 		goto out_proc_net_igmp6;
-	err = ip6_mc_dbg_proc_init(net);
+	err = ip6_mc_if_dbg_proc_init(net);
 	if (err)
 		goto out_proc_net_mcfilter6;
 
@@ -3303,7 +3304,7 @@ out_proc_net_igmp6:
 
 static void __net_exit igmp6_proc_exit(struct net *net)
 {
-	ip6_mc_dbg_proc_exit(net);
+	ip6_mc_if_dbg_proc_exit(net);
 	remove_proc_entry("mcfilter6", net->proc_net);
 	remove_proc_entry("igmp6", net->proc_net);
 }
