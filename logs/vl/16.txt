@@ -1,0 +1,20 @@
+# 가입 상태에서 --addrform → 반환값과 전후 omem= (대조: 7001 은 addrform 없이 가입만)
+maddr veth1 ff15::1=yes
+maddr dummy0 ff15::1=no
+-- af
+join ff15::1 if=veth1 src=- rc=0 errno=0
+omem=88 stage=joined
+omem=88 stage=addrform_before
+addrform connect ::ffff:127.0.0.1:9 rc=0 errno=0
+addrform AF_INET rc=0 errno=0
+omem=0 stage=addrform_after
+omem=0 stage=hold
+# ready pid=5446
+total=0
+-- ref
+join ff15::1 if=veth1 src=- rc=0 errno=0
+omem=88 stage=joined
+omem=88 stage=hold
+# ready pid=5462
+total=0
+# elapsed=5.5s date=2026-11-11T16:34:18+09:00

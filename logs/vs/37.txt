@@ -1,0 +1,31 @@
+# filler 4 + G 가입 소켓이 G 수신 중 G 탈퇴/재가입 200회 (G 로 2000개 계속 송신). 끝난 뒤(G 가입 상태) 3개 송신 → 3개 수신
+-- main (1단계 G 수신은 '# recv' 줄, 개수만 # 줄로)
+fill ff15::f:0 n=4 if=veth1 ok=4 failed=0
+join ff15::1 if=veth1 src=- rc=0 errno=0
+omem=2504 stage=joined
+omem=2504 stage=hold
+# ready pid=5405
+churn_rejoin ff15::1 if=veth1 n=200 drop_fail=0(errno=0) join_fail=0(errno=0)
+# churn_recv=1744
+# churn_elapsed_ms=1092
+omem=2504 stage=churned
+total=0
+phase2
+omem=2504 stage=after_churn
+# ready2 pid=5405
+recv seq=5000 group=ff15::1 src=fd00::1
+recv seq=5001 group=ff15::1 src=fd00::1
+recv seq=5002 group=ff15::1 src=fd00::1
+total=3
+# churn_recv_lines=1744 stale_in_phase2=0
+-- tx1
+sent 2000 to ff15::1 via veth0
+-- tx2
+sent 3 to ff15::1 via veth0
+dmesg_new_warn_bug=0
+# dmesg WARNING|BUG before=0 after=0
+nstat rx Udp6RcvbufErrors=0 Udp6InErrors=0
+# nstat| #kernel
+# nstat| Udp6InErrors                    0                  0.0
+# nstat| Udp6RcvbufErrors                0                  0.0
+# elapsed=11.9s date=2026-11-12T11:15:02+09:00

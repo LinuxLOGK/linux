@@ -1,0 +1,15 @@
+# 05 에서 dummy0 항목 탈퇴 후 송신 → fd00::1 만 수신 (탈퇴는 수신 시작 전에 수행)
+-- main
+join ff15::5 if=veth1 src=fd00::1 rc=0 errno=0
+join ff15::5 if=dummy0 src=fd00::9 rc=0 errno=0
+drop ff15::5 if=dummy0 rc=0 errno=0
+# ready pid=10045
+recv seq=0 group=ff15::5 src=fd00::1
+recv seq=1 group=ff15::5 src=fd00::1
+recv seq=2 group=ff15::5 src=fd00::1
+total=3
+-- tx1
+sent 3 to ff15::5 via veth0
+-- tx9
+sent 3 to ff15::5 via veth0
+# elapsed=3.5s date=2026-11-11T20:57:45+09:00

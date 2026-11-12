@@ -1,0 +1,41 @@
+# 그룹 3/4/5 개 가입, 각 그룹 송신 → 전부 수신. 가입 직후·hold 의 omem= (S: 4개째에 테이블 크기만큼 증가)
+== N=3
+-- m3
+many: joined=3 failed=0
+omem=264 stage=joined
+omem=264 stage=hold
+# ready pid=10633
+recv seq=0 group=ff15::1:0 src=fd00::1
+recv seq=0 group=ff15::1:1 src=fd00::1
+recv seq=0 group=ff15::1:2 src=fd00::1
+total=3
+-- tx3
+sent 1 each to 3 groups base ff15::1:0 port 7000 step 0 via veth0
+== N=4
+-- m4
+many: joined=4 failed=0
+omem=2416 stage=joined
+omem=2416 stage=hold
+# ready pid=10652
+recv seq=0 group=ff15::1:0 src=fd00::1
+recv seq=0 group=ff15::1:1 src=fd00::1
+recv seq=0 group=ff15::1:2 src=fd00::1
+recv seq=0 group=ff15::1:3 src=fd00::1
+total=4
+-- tx4
+sent 1 each to 4 groups base ff15::1:0 port 7000 step 0 via veth0
+== N=5
+-- m5
+many: joined=5 failed=0
+omem=2504 stage=joined
+omem=2504 stage=hold
+# ready pid=10670
+recv seq=0 group=ff15::1:0 src=fd00::1
+recv seq=0 group=ff15::1:1 src=fd00::1
+recv seq=0 group=ff15::1:2 src=fd00::1
+recv seq=0 group=ff15::1:3 src=fd00::1
+recv seq=0 group=ff15::1:4 src=fd00::1
+total=5
+-- tx5
+sent 1 each to 5 groups base ff15::1:0 port 7000 step 0 via veth0
+# elapsed=2.9s date=2026-11-11T20:57:58+09:00

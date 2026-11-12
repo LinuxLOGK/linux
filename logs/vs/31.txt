@@ -1,0 +1,22 @@
+# [pre] filler 4 + G 가입(5개) 상태에서 --addrform → 반환값과 전후 omem= (후 0, 대조: 7001 은 addrform 없이 5개 가입만, 16 대응)
+maddr veth1 ff15::1=yes
+maddr dummy0 ff15::1=no
+-- af
+fill ff15::f:0 n=4 if=veth1 ok=4 failed=0
+join ff15::1 if=veth1 src=- rc=0 errno=0
+omem=2504 stage=joined
+omem=2504 stage=addrform_before
+addrform connect ::ffff:127.0.0.1:9 rc=0 errno=0
+addrform AF_INET rc=0 errno=0
+omem=0 stage=addrform_after
+omem=0 stage=hold
+# ready pid=4343
+total=0
+-- ref
+fill ff15::f:0 n=4 if=veth1 ok=4 failed=0
+join ff15::1 if=veth1 src=- rc=0 errno=0
+omem=2504 stage=joined
+omem=2504 stage=hold
+# ready pid=4356
+total=0
+# elapsed=4.6s date=2026-11-12T11:14:17+09:00

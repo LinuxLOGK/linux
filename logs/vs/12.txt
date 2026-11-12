@@ -1,0 +1,7 @@
+# optmem_max=20480 에서 가입 한계 개수와 첫 실패 errno (끝나면 262144 로 복구)
+optmem_max=20480
+many: first fail at k=209 errno=12
+many: joined=209 failed=815
+closed
+optmem_max restored=262144
+# elapsed=2.4s date=2026-11-11T20:58:07+09:00

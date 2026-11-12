@@ -1,0 +1,20 @@
+# 4개 가입 → 전부 탈퇴 → 다시 4개 가입 → 각 그룹 수신. 단계마다 omem=
+maddr veth1 ff15::1:3=yes
+maddr dummy0 ff15::1:3=no
+-- main
+many: joined=4 failed=0
+omem=352 stage=joined
+drop-many: dropped=4 failed=0
+omem=0 stage=dropped
+rejoin: joined=4 failed=0
+omem=352 stage=rejoined
+omem=352 stage=hold
+# ready pid=6096
+recv seq=0 group=ff15::1:0 src=fd00::1
+recv seq=0 group=ff15::1:1 src=fd00::1
+recv seq=0 group=ff15::1:2 src=fd00::1
+recv seq=0 group=ff15::1:3 src=fd00::1
+total=4
+-- tx
+sent 1 each to 4 groups base ff15::1:0 port 7000 step 0 via veth0
+# elapsed=3.5s date=2026-11-11T16:34:40+09:00

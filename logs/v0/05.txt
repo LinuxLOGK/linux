@@ -1,0 +1,11 @@
+# veth1 INCLUDE{fd00::1}, dummy0 INCLUDE{fd00::9} 순 가입 → 최신 항목(dummy0) 기준 fd00::9 만 수신
+-- main
+join ff15::5 if=veth1 src=fd00::1 rc=0 errno=0
+join ff15::5 if=dummy0 src=fd00::9 rc=0 errno=0
+# ready pid=5808
+total=0
+-- tx1
+sent 3 to ff15::5 via veth0
+-- tx9
+sent 3 to ff15::5 via veth0
+# elapsed=3.9s date=2026-11-09T20:43:41+09:00

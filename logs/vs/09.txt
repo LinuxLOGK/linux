@@ -1,0 +1,18 @@
+# mcall=1 소켓은 미가입 그룹도 수신 (helper 가 그 그룹 가입). 대조: mcall=0 소켓은 0
+-- mc1
+mcall=1 rc=0 errno=0
+# ready pid=10462
+recv seq=0 group=ff15::1 src=fd00::1
+recv seq=1 group=ff15::1 src=fd00::1
+recv seq=2 group=ff15::1 src=fd00::1
+total=3
+-- mc0
+mcall=0 rc=0 errno=0
+# ready pid=10471
+total=0
+-- helper
+join ff15::1 if=veth1 src=- rc=0 errno=0
+# ready pid=10449
+-- tx
+sent 3 to ff15::1 via veth0
+# elapsed=3.1s date=2026-11-11T20:57:55+09:00

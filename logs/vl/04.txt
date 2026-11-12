@@ -1,0 +1,17 @@
+# 03 상태에서 ifindex=0 으로 탈퇴 → 최신(dummy0) 항목 제거, 남은 1개
+maddr veth1 ff15::1=yes
+maddr dummy0 ff15::1=no
+-- main
+join ff15::1 if=veth1 src=- rc=0 errno=0
+join ff15::1 if=dummy0 src=- rc=0 errno=0
+drop ff15::1 if=0 rc=0 errno=0
+# ready pid=3621
+total=0
+-- 남은 항목 재탈퇴(ifindex=0) / 한 번 더(없어야 함)
+join ff15::1 if=veth1 src=- rc=0 errno=0
+join ff15::1 if=dummy0 src=- rc=0 errno=0
+drop ff15::1 if=0 rc=0 errno=0
+drop ff15::1 if=0 rc=0 errno=0
+drop ff15::1 if=0 rc=-1 errno=99
+closed
+# elapsed=4.8s date=2026-11-11T16:33:21+09:00

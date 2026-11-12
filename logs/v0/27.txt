@@ -1,0 +1,33 @@
+# [post] 같은 그룹 2개 항목 가입 뒤 filler 4 (4개째에 테이블 생성) → 생성 시 순서 보존. a: 05 순서(결과는 05 와 같아야 함), b: 07 순서(fd00::1 만)
+== a: veth1 INCLUDE{fd00::1} → dummy0 INCLUDE{fd00::9} → filler 4
+-- a
+join ff15::5 if=veth1 src=fd00::1 rc=0 errno=0
+join ff15::5 if=dummy0 src=fd00::9 rc=0 errno=0
+omem=464 stage=joined2
+fill ff15::f:0 n=4 if=veth1 ok=4 failed=0
+omem=720 stage=joined
+omem=720 stage=hold
+# ready pid=17175
+total=0
+-- tx1a
+sent 3 to ff15::5 via veth0
+-- tx9a
+sent 3 to ff15::5 via veth0
+== b: dummy0 INCLUDE{fd00::9} → veth1 INCLUDE{fd00::1} → filler 4
+-- b
+join ff15::5 if=dummy0 src=fd00::9 rc=0 errno=0
+join ff15::5 if=veth1 src=fd00::1 rc=0 errno=0
+omem=464 stage=joined2
+fill ff15::f:0 n=4 if=veth1 ok=4 failed=0
+omem=720 stage=joined
+omem=720 stage=hold
+# ready pid=17214
+recv seq=0 group=ff15::5 src=fd00::1
+recv seq=1 group=ff15::5 src=fd00::1
+recv seq=2 group=ff15::5 src=fd00::1
+total=3
+-- tx1b
+sent 3 to ff15::5 via veth0
+-- tx9b
+sent 3 to ff15::5 via veth0
+# elapsed=5.6s date=2026-11-12T10:27:19+09:00

@@ -1,0 +1,56 @@
+# 그룹 2개 가입한 IPv6 TCP 리스닝 소켓에서 accept (일반 IPv6 / v4-mapped), 자식 close → 부모 close. 단계마다 부모/자식 omem=, 장치 가입 여부
+== conn=v6 port=7100
+-- tv6
+listen [::]:7100
+join ff15::1 if=veth1 src=- rc=0 errno=0
+join ff15::2 if=veth1 src=- rc=0 errno=0
+omem=176 stage=listen sock=parent
+maddr veth1 ff15::1=yes stage=listen
+maddr dummy0 ff15::1=no stage=listen
+maddr veth1 ff15::2=yes stage=listen
+maddr dummy0 ff15::2=no stage=listen
+connect [::1]:7100 rc=0 errno=0
+accept peer=::1
+omem=176 stage=accepted sock=parent
+omem=0 stage=accepted sock=child
+child closed rc=0
+omem=176 stage=child_closed sock=parent
+maddr veth1 ff15::1=yes stage=child_closed
+maddr dummy0 ff15::1=no stage=child_closed
+maddr veth1 ff15::2=yes stage=child_closed
+maddr dummy0 ff15::2=no stage=child_closed
+parent closed rc=0
+maddr veth1 ff15::1=no stage=parent_closed
+maddr dummy0 ff15::1=no stage=parent_closed
+maddr veth1 ff15::2=no stage=parent_closed
+maddr dummy0 ff15::2=no stage=parent_closed
+tcp v6 rc=0
+== conn=v4 port=7101
+-- tv4
+listen [::]:7101
+join ff15::1 if=veth1 src=- rc=0 errno=0
+join ff15::2 if=veth1 src=- rc=0 errno=0
+omem=176 stage=listen sock=parent
+maddr veth1 ff15::1=yes stage=listen
+maddr dummy0 ff15::1=no stage=listen
+maddr veth1 ff15::2=yes stage=listen
+maddr dummy0 ff15::2=no stage=listen
+connect 127.0.0.1:7101 rc=0 errno=0
+accept peer=::ffff:127.0.0.1
+omem=176 stage=accepted sock=parent
+omem=0 stage=accepted sock=child
+child closed rc=0
+omem=176 stage=child_closed sock=parent
+maddr veth1 ff15::1=yes stage=child_closed
+maddr dummy0 ff15::1=no stage=child_closed
+maddr veth1 ff15::2=yes stage=child_closed
+maddr dummy0 ff15::2=no stage=child_closed
+parent closed rc=0
+maddr veth1 ff15::1=no stage=parent_closed
+maddr dummy0 ff15::1=no stage=parent_closed
+maddr veth1 ff15::2=no stage=parent_closed
+maddr dummy0 ff15::2=no stage=parent_closed
+tcp v4 rc=0
+dmesg_new_warn_bug=0
+# dmesg WARNING|BUG before=0 after=0
+# elapsed=4.0s date=2026-11-11T16:34:44+09:00

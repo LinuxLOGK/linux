@@ -1,0 +1,35 @@
+# [pre] filler 4 → G INCLUDE{fd00::1} 가입 → JOIN_SOURCE_GROUP 로 fd00::9 추가 → 두 출발지 수신 → LEAVE_SOURCE_GROUP 로 fd00::1 제거 → fd00::9 만 수신
+-- main
+fill ff15::f:0 n=4 if=veth1 ok=4 failed=0
+omem=352 stage=filled
+join ff15::5 if=veth1 src=fd00::1 rc=0 errno=0
+join ff15::5 if=veth1 src=fd00::9 rc=0 errno=0
+omem=608 stage=joined
+msfget ff15::5 if=veth1 rc=0 errno=0 mode=include nsrc=2 src=fd00::1,fd00::9
+omem=608 stage=hold
+# ready pid=5302
+recv seq=0 group=ff15::5 src=fd00::1
+recv seq=1 group=ff15::5 src=fd00::1
+recv seq=2 group=ff15::5 src=fd00::1
+recv seq=100 group=ff15::5 src=fd00::9
+recv seq=101 group=ff15::5 src=fd00::9
+recv seq=102 group=ff15::5 src=fd00::9
+total=6
+phase2
+leave-src ff15::5 if=veth1 src=fd00::1 rc=0 errno=0
+msfget ff15::5 if=veth1 rc=0 errno=0 mode=include nsrc=1 src=fd00::9
+omem=608 stage=left
+# ready2 pid=5302
+recv seq=300 group=ff15::5 src=fd00::9
+recv seq=301 group=ff15::5 src=fd00::9
+recv seq=302 group=ff15::5 src=fd00::9
+total=3
+-- tx11
+sent 3 to ff15::5 via veth0
+-- tx91
+sent 3 to ff15::5 via veth0
+-- tx12
+sent 3 to ff15::5 via veth0
+-- tx92
+sent 3 to ff15::5 via veth0
+# elapsed=5.8s date=2026-11-12T10:34:02+09:00

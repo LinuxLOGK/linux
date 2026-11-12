@@ -1,0 +1,18 @@
+# [pre] filler 4 → ASM 가입 후 --block fd00::1, 두 출발지 송신 → fd00::9 만 수신 (08 대응)
+-- main
+fill ff15::f:0 n=4 if=veth1 ok=4 failed=0
+omem=256 stage=filled
+join ff15::5 if=veth1 src=- rc=0 errno=0
+omem=320 stage=joined
+block ff15::5 if=veth1 src=fd00::1 rc=0 errno=0
+omem=488 stage=hold
+# ready pid=17393
+recv seq=100 group=ff15::5 src=fd00::9
+recv seq=101 group=ff15::5 src=fd00::9
+recv seq=102 group=ff15::5 src=fd00::9
+total=3
+-- tx1
+sent 3 to ff15::5 via veth0
+-- tx9
+sent 3 to ff15::5 via veth0
+# elapsed=4.6s date=2026-11-12T10:27:24+09:00

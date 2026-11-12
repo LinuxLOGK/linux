@@ -1,0 +1,14 @@
+# 1024 가입 → 앞 1023 탈퇴 → 1024 그룹 전부 송신 → 남은 1개(k=1023, 마지막 송신)만 수신
+-- main
+many: joined=1024 failed=0
+drop-many: dropped=1023 failed=0
+# ready pid=11151
+recv seq=0 group=ff15::1:3ff src=fd00::1
+total=1
+-- tx
+sent 1 each to 1024 groups base ff15::1:0 port 7000 step 0 via veth0
+nstat rx Udp6RcvbufErrors=0 Udp6InErrors=0
+# nstat| #kernel
+# nstat| Udp6InErrors                    0                  0.0
+# nstat| Udp6RcvbufErrors                0                  0.0
+# elapsed=4.8s date=2026-11-11T20:58:12+09:00

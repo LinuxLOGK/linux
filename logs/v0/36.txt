@@ -1,0 +1,27 @@
+# 소켓 B(같은 포트, mcall=0, 가입 없음)의 스레드가 filler 4 가입 → 전부 탈퇴 500회(테이블 생성·해제 500회)하는 동안 G 로 3000개 송신. A(G 가입 1개)는 3000, B 는 0
+-- A (recv 줄은 그룹별 개수로 요약)
+join ff15::1 if=veth1 src=- rc=0 errno=0
+omem=64 stage=joined
+omem=64 stage=hold
+# ready pid=18796
+total=3000
+3000 recv_by_group ff15::1
+-- B
+mcall=0 rc=0 errno=0
+omem=0 stage=joined
+omem=0 stage=hold
+# ready pid=18810
+churn_fill ff15::f:0 k=4 if=veth1 n=500 join_fail=0(errno=0) drop_fail=0(errno=0)
+# churn_recv=0
+# churn_elapsed_ms=1945
+omem=0 stage=churned
+total=0
+-- tx
+sent 3000 to ff15::1 via veth0
+dmesg_new_warn_bug=0
+# dmesg WARNING|BUG before=0 after=0
+nstat rx Udp6RcvbufErrors=0 Udp6InErrors=0
+# nstat| #kernel
+# nstat| Udp6InErrors                    0                  0.0
+# nstat| Udp6RcvbufErrors                0                  0.0
+# elapsed=14.2s date=2026-11-12T10:28:14+09:00

@@ -1,0 +1,14 @@
+# 가입 상태에서 close 후 같은 포트로 새 소켓 bind → 성공 (새 소켓 가입·수신까지)
+-- old
+join ff15::1 if=veth1 src=- rc=0 errno=0
+closed
+-- new
+join ff15::1 if=veth1 src=- rc=0 errno=0
+# ready pid=11468
+recv seq=0 group=ff15::1 src=fd00::1
+recv seq=1 group=ff15::1 src=fd00::1
+recv seq=2 group=ff15::1 src=fd00::1
+total=3
+-- tx
+sent 3 to ff15::1 via veth0
+# elapsed=3.4s date=2026-11-11T20:58:21+09:00

@@ -1,0 +1,80 @@
+# MCAST_MSFILTER: 가입 1개 / filler 4 상태에서 a) 올바른 ifindex 로 INCLUDE{fd00::9} → fd00::9 만 수신, msfget  b) ifindex=0 으로 설정 시도 → 반환값·errno (원본 동작 그대로 기록)
+== a: filler 0, ifindex=veth1 로 msfilter
+-- a
+join ff15::5 if=veth1 src=- rc=0 errno=0
+omem=88 stage=joined
+msfilter ff15::5 if=veth1 mode=include nsrc=1 rc=0 errno=0
+omem=112 stage=msfilter
+msfget ff15::5 if=veth1 rc=0 errno=0 mode=include nsrc=1 src=fd00::9
+omem=112 stage=hold
+# ready pid=4639
+recv seq=100 group=ff15::5 src=fd00::9
+recv seq=101 group=ff15::5 src=fd00::9
+recv seq=102 group=ff15::5 src=fd00::9
+total=3
+-- tx1a
+sent 3 to ff15::5 via veth0
+-- tx9a
+sent 3 to ff15::5 via veth0
+== b: filler 0, ifindex=0 로 msfilter
+-- b
+join ff15::5 if=veth1 src=- rc=0 errno=0
+omem=88 stage=joined
+msfilter ff15::5 if=0 mode=include nsrc=1 rc=-1 errno=22
+omem=88 stage=msfilter
+msfget ff15::5 if=0 rc=-1 errno=99
+msfget ff15::5 if=veth1 rc=0 errno=0 mode=exclude nsrc=0 src=-
+omem=88 stage=hold
+# ready pid=4673
+recv seq=0 group=ff15::5 src=fd00::1
+recv seq=1 group=ff15::5 src=fd00::1
+recv seq=2 group=ff15::5 src=fd00::1
+recv seq=100 group=ff15::5 src=fd00::9
+recv seq=101 group=ff15::5 src=fd00::9
+recv seq=102 group=ff15::5 src=fd00::9
+total=6
+-- tx1b
+sent 3 to ff15::5 via veth0
+-- tx9b
+sent 3 to ff15::5 via veth0
+== ca: filler 4, ifindex=veth1 로 msfilter
+-- ca
+fill ff15::f:0 n=4 if=veth1 ok=4 failed=0
+join ff15::5 if=veth1 src=- rc=0 errno=0
+omem=2504 stage=joined
+msfilter ff15::5 if=veth1 mode=include nsrc=1 rc=0 errno=0
+omem=2528 stage=msfilter
+msfget ff15::5 if=veth1 rc=0 errno=0 mode=include nsrc=1 src=fd00::9
+omem=2528 stage=hold
+# ready pid=4700
+recv seq=100 group=ff15::5 src=fd00::9
+recv seq=101 group=ff15::5 src=fd00::9
+recv seq=102 group=ff15::5 src=fd00::9
+total=3
+-- tx1ca
+sent 3 to ff15::5 via veth0
+-- tx9ca
+sent 3 to ff15::5 via veth0
+== cb: filler 4, ifindex=0 로 msfilter
+-- cb
+fill ff15::f:0 n=4 if=veth1 ok=4 failed=0
+join ff15::5 if=veth1 src=- rc=0 errno=0
+omem=2504 stage=joined
+msfilter ff15::5 if=0 mode=include nsrc=1 rc=-1 errno=22
+omem=2504 stage=msfilter
+msfget ff15::5 if=0 rc=-1 errno=99
+msfget ff15::5 if=veth1 rc=0 errno=0 mode=exclude nsrc=0 src=-
+omem=2504 stage=hold
+# ready pid=4727
+recv seq=0 group=ff15::5 src=fd00::1
+recv seq=1 group=ff15::5 src=fd00::1
+recv seq=2 group=ff15::5 src=fd00::1
+recv seq=100 group=ff15::5 src=fd00::9
+recv seq=101 group=ff15::5 src=fd00::9
+recv seq=102 group=ff15::5 src=fd00::9
+total=6
+-- tx1cb
+sent 3 to ff15::5 via veth0
+-- tx9cb
+sent 3 to ff15::5 via veth0
+# elapsed=6.5s date=2026-11-12T11:14:27+09:00

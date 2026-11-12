@@ -1,0 +1,19 @@
+# 그룹 1개 가입, 가입/미가입 그룹 송신 → 가입 그룹만 수신 (미가입 그룹은 helper 소켓이 veth1 에 가입)
+-- main
+mcall=0 rc=0 errno=0
+join ff15::1 if=veth1 src=- rc=0 errno=0
+# ready pid=9413
+recv seq=0 group=ff15::1 src=fd00::1
+recv seq=1 group=ff15::1 src=fd00::1
+recv seq=2 group=ff15::1 src=fd00::1
+total=3
+-- helper
+join ff15::2 if=veth1 src=- rc=0 errno=0
+# ready pid=9405
+-- tx2
+sent 3 to ff15::2 via veth0
+-- tx1
+sent 3 to ff15::1 via veth0
+maddr veth1 ff15::2=no
+maddr dummy0 ff15::2=no
+# elapsed=3.6s date=2026-11-11T20:57:30+09:00

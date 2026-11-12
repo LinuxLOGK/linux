@@ -1,0 +1,15 @@
+# [pre] filler 4 → veth1 INCLUDE{fd00::1}, dummy0 INCLUDE{fd00::9} 순 가입, 두 출발지 송신 (05 대응, 결과는 05 와 같아야 함)
+-- main
+fill ff15::f:0 n=4 if=veth1 ok=4 failed=0
+omem=352 stage=filled
+join ff15::5 if=veth1 src=fd00::1 rc=0 errno=0
+join ff15::5 if=dummy0 src=fd00::9 rc=0 errno=0
+omem=864 stage=joined
+omem=864 stage=hold
+# ready pid=3553
+total=0
+-- tx1
+sent 3 to ff15::5 via veth0
+-- tx9
+sent 3 to ff15::5 via veth0
+# elapsed=4.0s date=2026-11-12T10:33:09+09:00

@@ -1,0 +1,40 @@
+# [pre] filler 4 → 같은 그룹 veth1, dummy0 명시 가입, ifindex=0 중복 가입(EADDRINUSE) → ifindex=0 탈퇴는 최신(dummy0) 제거 (03, 04 대응)
+== 03 대응: 두 장치 가입 + ifindex=0 중복 가입
+maddr veth1 ff15::1=yes
+maddr dummy0 ff15::1=yes
+-- join
+fill ff15::f:0 n=4 if=veth1 ok=4 failed=0
+omem=256 stage=filled
+join ff15::1 if=veth1 src=- rc=0 errno=0
+join ff15::1 if=dummy0 src=- rc=0 errno=0
+join ff15::1 if=0 src=- rc=-1 errno=98
+omem=384 stage=joined
+omem=384 stage=hold
+# ready pid=16548
+total=0
+== 04 대응: ifindex=0 탈퇴
+maddr veth1 ff15::1=yes
+maddr dummy0 ff15::1=no
+-- drop
+fill ff15::f:0 n=4 if=veth1 ok=4 failed=0
+omem=256 stage=filled
+join ff15::1 if=veth1 src=- rc=0 errno=0
+join ff15::1 if=dummy0 src=- rc=0 errno=0
+join ff15::1 if=0 src=- rc=-1 errno=98
+omem=384 stage=joined
+drop ff15::1 if=0 rc=0 errno=0
+omem=320 stage=dropped
+omem=320 stage=hold
+# ready pid=16568
+total=0
+-- 남은 항목 재탈퇴(ifindex=0) / 한 번 더(없어야 함)
+fill ff15::f:0 n=4 if=veth1 ok=4 failed=0
+join ff15::1 if=veth1 src=- rc=0 errno=0
+join ff15::1 if=dummy0 src=- rc=0 errno=0
+omem=384 stage=joined
+drop ff15::1 if=0 rc=0 errno=0
+drop ff15::1 if=0 rc=0 errno=0
+drop ff15::1 if=0 rc=-1 errno=99
+omem=256 stage=dropped
+closed
+# elapsed=5.4s date=2026-11-12T10:27:02+09:00

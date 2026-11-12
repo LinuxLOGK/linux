@@ -1,0 +1,21 @@
+# 단계별·--hold 의 omem= : 7000 가입 없음 / 7001 1024 가입 중 / 7002 1024 가입 후 전부 탈퇴
+-- base
+omem=0 stage=joined
+omem=0 stage=hold
+# ready pid=5167
+total=0
+-- join
+many: joined=1024 failed=0
+omem=90112 stage=joined
+omem=90112 stage=hold
+# ready pid=5178
+total=0
+-- dropall
+many: joined=1024 failed=0
+omem=90112 stage=joined
+drop-many: dropped=1024 failed=0
+omem=0 stage=dropped
+omem=0 stage=hold
+# ready pid=5189
+total=0
+# elapsed=4.3s date=2026-11-11T16:34:09+09:00

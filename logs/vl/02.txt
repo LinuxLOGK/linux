@@ -1,0 +1,5 @@
+# 같은 그룹 ifindex=0 두 번 가입 → 두 번째 EADDRINUSE
+join ff15::1 if=0 src=- rc=0 errno=0
+join ff15::1 if=0 src=- rc=-1 errno=98
+closed
+# elapsed=3.5s date=2026-11-11T16:33:11+09:00

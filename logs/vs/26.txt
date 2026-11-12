@@ -1,0 +1,18 @@
+# [pre] 24 의 가입 순서 반대 (dummy0 먼저, veth1 나중) → 최신(veth1) 기준 fd00::1 만 수신 (07 대응)
+-- main
+fill ff15::f:0 n=4 if=veth1 ok=4 failed=0
+omem=2416 stage=filled
+join ff15::5 if=dummy0 src=fd00::9 rc=0 errno=0
+join ff15::5 if=veth1 src=fd00::1 rc=0 errno=0
+omem=2928 stage=joined
+omem=2928 stage=hold
+# ready pid=3572
+recv seq=0 group=ff15::5 src=fd00::1
+recv seq=1 group=ff15::5 src=fd00::1
+recv seq=2 group=ff15::5 src=fd00::1
+total=3
+-- tx1
+sent 3 to ff15::5 via veth0
+-- tx9
+sent 3 to ff15::5 via veth0
+# elapsed=3.8s date=2026-11-12T11:13:54+09:00

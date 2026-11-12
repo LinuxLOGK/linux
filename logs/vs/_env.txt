@@ -1,0 +1,15 @@
+tag=vs
+uname -r: 5.4.214-vs
+linux commit: 38834bb4cfd5d937af09fef3e732ee7033609375 (v5.4.214-3-g38834bb4c)
+linux branch: s-sock-hash
+optmem_max(start): 20480
+date: 2026-11-12T11:13:36+09:00
+mc6test sha256: 2820f71c155512392383451cff4f4c6c574c45a73ce608e4e836b42ce2ceefe6  (실행 사본: /tmp/run-fixture.iE8TgS/mc6test)
+run-fixture.sh sha256: 8ebb19753ba520622e4e033535264f04b9e1d2a7ab4d249656926458a4b17d53
+cases: 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37
+dmesg WARNING|BUG before: 0
+optmem_max(end): 262144
+dmesg WARNING|BUG after: 0
+date(end): 2026-11-12T11:15:02+09:00
+failed: none
+fixture_error: none

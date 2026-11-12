@@ -1,0 +1,9 @@
+# 같은 그룹을 veth1, dummy0 에 명시 ifindex 로 가입 → 둘 다 성공
+maddr veth1 ff15::1=yes
+maddr dummy0 ff15::1=yes
+-- main
+join ff15::1 if=veth1 src=- rc=0 errno=0
+join ff15::1 if=dummy0 src=- rc=0 errno=0
+# ready pid=5564
+total=0
+# elapsed=3.0s date=2026-11-09T20:43:34+09:00
