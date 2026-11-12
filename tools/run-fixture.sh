@@ -361,14 +361,14 @@ c02() { echo "# 같은 그룹 ifindex=0 두 번 가입 → 두 번째 EADDRINUSE
 
 c03() { echo "# 같은 그룹을 veth1, dummy0 에 명시 ifindex 로 가입 → 둘 다 성공"
   ns_up
-  rx_bg main --port 7000 --join $G@veth1 --join $G@dummy0 --hold 1 --timeout 0
+  rx_bg main --port 7000 --join $G@veth1 --join $G@dummy0 --hold 5 --timeout 0
   maddr $G
   rx_wait main; show main
 }
 
 c04() { echo "# 03 상태에서 ifindex=0 으로 탈퇴 → 최신(dummy0) 항목 제거, 남은 1개"
   ns_up
-  rx_bg main --port 7000 --join $G@veth1 --join $G@dummy0 --drop $G --hold 1 --timeout 0
+  rx_bg main --port 7000 --join $G@veth1 --join $G@dummy0 --drop $G --hold 5 --timeout 0
   maddr $G
   rx_wait main; show main
   echo "-- 남은 항목 재탈퇴(ifindex=0) / 한 번 더(없어야 함)"
@@ -658,11 +658,11 @@ OMEM_RE='^omem=[0-9]+ stage='
 c23() { echo "# [pre] filler 4 → 같은 그룹 veth1, dummy0 명시 가입, ifindex=0 중복 가입(EADDRINUSE) → ifindex=0 탈퇴는 최신(dummy0) 제거 (03, 04 대응)"
   ns_up
   echo "== 03 대응: 두 장치 가입 + ifindex=0 중복 가입"
-  rx_bg join --port 7000 "${FILL[@]}" --mark filled --join $G@veth1 --join $G@dummy0 --join $G --omem --hold 1 --timeout 0
+  rx_bg join --port 7000 "${FILL[@]}" --mark filled --join $G@veth1 --join $G@dummy0 --join $G --omem --hold 5 --timeout 0
   maddr $G
   rx_wait join; show join
   echo "== 04 대응: ifindex=0 탈퇴"
-  rx_bg drop --port 7001 "${FILL[@]}" --mark filled --join $G@veth1 --join $G@dummy0 --join $G --drop $G --omem --hold 1 --timeout 0
+  rx_bg drop --port 7001 "${FILL[@]}" --mark filled --join $G@veth1 --join $G@dummy0 --join $G --drop $G --omem --hold 5 --timeout 0
   maddr $G
   rx_wait drop; show drop
   echo "-- 남은 항목 재탈퇴(ifindex=0) / 한 번 더(없어야 함)"
