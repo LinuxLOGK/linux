@@ -337,6 +337,10 @@ config IPV6_MC_IF_LOOKUP_DEBUG
 	  after every update, and report the state of each device in
 	  /proc/net/mc6_if_lookup.
 
+	  The lookup counters cover every search of the interface group
+	  list: received packets, group joins and leaves, and source
+	  filter updates.  They are not a count of received packets.
+
 	  This adds atomic counters to every lookup and grows struct
 	  inet6_dev.  It is meant for correctness demonstrations and
 	  debugging; do not enable it in kernels used for performance

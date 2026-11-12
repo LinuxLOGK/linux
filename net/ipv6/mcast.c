@@ -1143,6 +1143,12 @@ static int __ipv6_dev_mc_inc(struct net_device *dev,
 	 * an empty table ready before the lock is taken.  Without one the
 	 * join still succeeds and lookups keep searching mc_list; the next
 	 * join that adds a group tries again.
+	 *
+	 * Whether the group is new is only known under the lock.  A join to
+	 * a group the interface already has therefore allocates a table
+	 * here and frees it unused below, as long as the interface is one
+	 * group short of the threshold or was left without a table by an
+	 * earlier allocation failure.
 	 */
 	if (ip6_mc_if_hash_wanted(idev)) {
 		new_hash = ip6_mc_if_hash_alloc();
