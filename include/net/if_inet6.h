@@ -13,6 +13,7 @@
 #include <net/snmp.h>
 #include <linux/ipv6.h>
 #include <linux/refcount.h>
+#include <linux/rhashtable-types.h>
 
 /* inet6_dev.if_flags */
 
@@ -122,7 +123,10 @@ struct ip6_sf_list {
 struct ifmcaddr6 {
 	struct in6_addr		mca_addr;
 	struct inet6_dev	*idev;
-	struct ifmcaddr6	*next;
+	struct hlist_node	mca_list;	/* idev->mc_list */
+	struct hlist_node	mca_hnode;	/* idev->mc_hash bucket */
+	struct rhash_head	mca_rhnode;	/* idev->mc_rht */
+	struct ifmcaddr6	*next;		/* idev->mc_tomb only */
 	struct ip6_sf_list	*mca_sources;
 	struct ip6_sf_list	*mca_tomb;
 	unsigned int		mca_sfmode;
@@ -168,12 +172,29 @@ struct ipv6_devstat {
 	DEFINE_SNMP_STAT_ATOMIC(struct icmpv6msg_mib_device, icmpv6msgdev);
 };
 
+#ifdef CONFIG_IPV6_MC_IF_LOOKUP_DEBUG
+/* Interface multicast group lookup diagnostics, see /proc/net/mc6_if_lookup */
+struct ip6_mc_if_dbg {
+	atomic_long_t		lookups;	/* group searches */
+	atomic_long_t		hash_lookups;	/* ... that used mc_hash */
+	atomic_long_t		compares;	/* group addresses compared */
+	atomic_long_t		builds;		/* mc_hash tables published */
+	atomic_long_t		alloc_fails;	/* mc_hash allocations failed */
+};
+#endif
+
 struct inet6_dev {
 	struct net_device	*dev;
 
 	struct list_head	addr_list;
 
-	struct ifmcaddr6	*mc_list;
+	/* mc_list and its lookup indexes are protected by ->lock.  The
+	 * indexes stay NULL unless the matching lookup option is built in
+	 * and the interface has grown past the activation threshold.
+	 */
+	struct hlist_head	mc_list;
+	struct hlist_head	*mc_hash;	/* fixed-size hash of mc_list */
+	struct rhashtable	*mc_rht;	/* rhashtable of mc_list */
 	struct ifmcaddr6	*mc_tomb;
 	spinlock_t		mc_lock;
 
@@ -181,6 +202,7 @@ struct inet6_dev {
 	unsigned char		mc_gq_running;
 	unsigned char		mc_ifc_count;
 	unsigned char		mc_dad_count;
+	unsigned int		mc_count;	/* entries on mc_list */
 
 	unsigned long		mc_v1_seen;	/* Max time we stay in MLDv1 mode */
 	unsigned long		mc_qi;		/* Query Interval */
@@ -213,6 +235,10 @@ struct inet6_dev {
 
 	unsigned long		tstamp; /* ipv6InterfaceTable update timestamp */
 	struct rcu_head		rcu;
+#ifdef CONFIG_IPV6_MC_IF_LOOKUP_DEBUG
+	/* kept last: the fields above have the same offsets in every build */
+	struct ip6_mc_if_dbg	mc_dbg;
+#endif
 };
 
 static inline void ipv6_eth_mc_map(const struct in6_addr *addr, char *buf)

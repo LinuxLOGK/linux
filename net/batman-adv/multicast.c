@@ -456,7 +456,7 @@ batadv_mcast_mla_softif_get_ipv6(struct net_device *dev,
 	}
 
 	read_lock_bh(&in6_dev->lock);
-	for (pmc6 = in6_dev->mc_list; pmc6; pmc6 = pmc6->next) {
+	hlist_for_each_entry(pmc6, &in6_dev->mc_list, mca_list) {
 		if (IPV6_ADDR_MC_SCOPE(&pmc6->mca_addr) <
 		    IPV6_ADDR_SCOPE_LINKLOCAL)
 			continue;
