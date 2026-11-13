@@ -8,7 +8,7 @@ OPTMEM="${OPTMEM_MAX:-262144}"
 case "$CMD" in
 up)
   ip netns list | grep -q '^tx' && { echo "이미 up. down 후 다시."; exit 0; }
-  sudo modprobe veth dummy
+  sudo modprobe -a veth dummy 2>/dev/null || true
   sudo ip netns add tx; sudo ip netns add rx
   sudo ip link add veth0 type veth peer name veth1
   sudo ip link set veth0 netns tx; sudo ip link set veth1 netns rx
