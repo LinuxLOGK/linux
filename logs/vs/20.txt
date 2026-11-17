@@ -1,3 +1,3 @@
-# 할당 실패 주입
-N/A on V0
-# elapsed=0.0s date=2026-11-11T20:58:41+09:00
+# 테이블 할당 실패 주입 (failslab: kmalloc-4k, make-it-fail 프로세스만). 한 소켓에서 fail 켜고 5개 가입(반환값 0, 테이블 없이 omem=5x88) → 5개 그룹 수신·미가입 그룹 0 → fail 끄고 1개 더 가입(테이블 생성, 6x88+2064) → 6개 수신 → 전부 탈퇴 omem=0
+N/A (no failslab)
+# elapsed=0.0s date=2026-11-12T20:26:30+09:00

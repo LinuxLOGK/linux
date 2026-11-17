@@ -75,10 +75,19 @@ MB=ff15::1:0   # --many / --wa 기준 (하위 16비트 = 인덱스)
 F=ff15::f:0    # filler 기준 (사례 23~37). 시험 그룹과 겹치지 않음
 FILL=(--fill 4 $F@veth1)   # filler 4개: ff15::f:0 ~ ff15::f:3 를 veth1 에
 
+# 비교 모드(--omem, --diff)용 임시 디렉터리. /dev/fd 가 없는 환경에서도 돌도록 <( ) 대신 파일에 써서 비교하고,
+# 끝나면(신호로 끝나도) 지운다. 두 모드는 아래 본 실행의 trap 설정 전에 exit 하므로 여기서 따로 건다
+cmp_tmpdir() {
+  CMP_TMP=$(mktemp -d "${TMPDIR:-/tmp}/run-fixture-cmp.XXXXXX") || exit 1
+  trap 'rm -rf "$CMP_TMP"' EXIT
+  trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM
+}
+
 # ---------------------------------------------------------------- omem 비교 모드
 if [[ "${1:-}" == "--omem" ]]; then
   [[ $# -eq 3 ]] || { echo "사용법: $0 --omem <태그A> <태그B>" >&2; exit 1; }
   A="$LOGROOT/$2"; B="$LOGROOT/$3"
+  cmp_tmpdir
   for f in "$A"/[0-9][0-9].txt; do
     n=$(basename "$f" .txt)
     if [[ ! -f "$B/$n.txt" ]]; then echo "== $n: $3 에 없음"; continue; fi
@@ -86,7 +95,9 @@ if [[ "${1:-}" == "--omem" ]]; then
     echo "== $n  $(head -1 "$f" | sed 's/^# //')"
     grep -q '^FIXTURE ERROR' "$f" "$B/$n.txt" && echo "  (FIXTURE ERROR 있음: 환경 문제)"
     # omem= 줄과, 그 앞의 구분 줄(== / --)만 위치대로 짝지어 출력
-    paste -d '\t' <(grep -E '^(omem=|== |-- )' "$f") <(grep -E '^(omem=|== |-- )' "$B/$n.txt") |
+    grep -E '^(omem=|== |-- )' "$f" > "$CMP_TMP/a"
+    grep -E '^(omem=|== |-- )' "$B/$n.txt" > "$CMP_TMP/b"
+    paste -d '\t' "$CMP_TMP/a" "$CMP_TMP/b" |
       awk -F'\t' -v ta="$2" -v tb="$3" '
         function val(s) { sub(/^omem=/, "", s); sub(/ .*/, "", s); return s }
         function rest(s) { return index(s, " ") ? substr(s, index(s, " ") + 1) : "" }
@@ -110,6 +121,7 @@ if [[ "${1:-}" == "--diff" ]]; then
   if [[ "${2:-}" == "--behavior" ]]; then BEHAVIOR=1; set -- "$1" "${@:3}"; fi
   [[ $# -eq 3 ]] || { echo "사용법: $0 --diff [--behavior] <태그A> <태그B>" >&2; exit 1; }
   A="$LOGROOT/$2"; B="$LOGROOT/$3"; rc=0
+  cmp_tmpdir
   # --behavior: "#" 줄에 더해 omem= 줄과 12 의 한도 줄도 뺀다
   behavior_filter() {
     if [[ $2 == 12.txt ]]; then grep -v '^#' "$1" | grep -v '^omem=' | grep -vE '^many: (first fail at |joined=)'
@@ -125,7 +137,9 @@ if [[ "${1:-}" == "--diff" ]]; then
         grep -H '^FIXTURE ERROR' "$f" "$B/$n" | sed "s|^$LOGROOT/||"
         rc=1; continue
       fi
-      if ! out=$(diff -u --label "$2/$n" --label "$3/$n" <(behavior_filter "$f" "$n") <(behavior_filter "$B/$n" "$n")); then
+      behavior_filter "$f" "$n" > "$CMP_TMP/a"
+      behavior_filter "$B/$n" "$n" > "$CMP_TMP/b"
+      if ! out=$(diff -u --label "$2/$n" --label "$3/$n" "$CMP_TMP/a" "$CMP_TMP/b"); then
         echo "$out"; rc=1
       else
         echo "== $n 같음"
@@ -141,7 +155,9 @@ if [[ "${1:-}" == "--diff" ]]; then
       grep -H '^FIXTURE ERROR' "$f" "$B/$n" | sed "s|^$LOGROOT/||"
       rc=1; continue
     fi
-    if ! out=$(diff -u --label "$2/$n" --label "$3/$n" <(grep -v '^#' "$f") <(grep -v '^#' "$B/$n")); then
+    grep -v '^#' "$f" > "$CMP_TMP/a"
+    grep -v '^#' "$B/$n" > "$CMP_TMP/b"
+    if ! out=$(diff -u --label "$2/$n" --label "$3/$n" "$CMP_TMP/a" "$CMP_TMP/b"); then
       echo "$out"; rc=1
     else
       echo "== $n 같음"
@@ -550,7 +566,8 @@ c19() { echo "# --wa 1024: 소켓 1024 개(포트 7000+i, 그룹 i) → 그룹�
 #   /proc/config.gz 가 있으면 그것만 본다. 없으면 환경변수 RF_SOCK_HASH(1|0), 그것도 없으면 unknown.
 sock_hash_state() {
   if [[ -r /proc/config.gz ]]; then
-    if grep -qx 'CONFIG_IPV6_MC_SOCK_HASH=y' < <(zcat /proc/config.gz); then echo on; else echo off; fi
+    # grep -q 는 찾자마자 끝나 zcat 이 SIGPIPE(141) 로 죽고 pipefail 때문에 거짓이 되므로 -c 로 끝까지 읽는다
+    if [[ $(zcat /proc/config.gz | grep -cx 'CONFIG_IPV6_MC_SOCK_HASH=y') -gt 0 ]]; then echo on; else echo off; fi
     return
   fi
   case "${RF_SOCK_HASH:-}" in
@@ -565,13 +582,14 @@ sock_hash_state() {
 #   E = joined / 5 (항목 크기, 커널마다 다름). joined == 5E, dropped_all == 0,
 #   joined6 == 6E + 2064 (S 켜짐) / 6E (S 꺼짐). S 판별 불가면 건너뛴다.
 c20_table_check() {
-  local s j h j6 d e want6
+  local s j h j6 d e want6 vals
   s=$(sock_hash_state)
   if [[ $s == unknown ]]; then echo "# table check skipped (S 여부 판별 불가)"; return 0; fi
-  read -r j h j6 d < <(awk '
+  vals=$(awk '
     /^omem=[0-9]+ stage=/ { v = $1; sub(/^omem=/, "", v); st = $2; sub(/^stage=/, "", st); if (!(st in o)) o[st] = v }
     END { printf "%s %s %s %s\n", ("joined" in o) ? o["joined"] : "-", ("hold" in o) ? o["hold"] : "-",
                                   ("joined6" in o) ? o["joined6"] : "-", ("dropped_all" in o) ? o["dropped_all"] : "-" }' "$W/main.out")
+  read -r j h j6 d <<< "$vals"
   if [[ $j == - || $j6 == - || $d == - ]]; then
     fail "table check: omem 값 없음 (joined=$j joined6=$j6 dropped_all=$d)"; return 0
   fi
@@ -586,8 +604,8 @@ c20_table_check() {
 }
 
 c20() { echo "# 테이블 할당 실패 주입 (failslab: kmalloc-4k, make-it-fail 프로세스만). 한 소켓에서 fail 켜고 5개 가입(반환값 0, 테이블 없이 omem=5E, E=항목 크기) → 5개 그룹 수신·미가입 그룹 0 → fail 끄고 1개 더 가입(6E, S 면 테이블 생성 +2064) → 6개 수신 → 전부 탈퇴 omem=0. S 가 켜진 커널에서는 테이블 크기(+2064)까지 검사한다 (S 여부: /proc/config.gz, 없으면 RF_SOCK_HASH=1|0)"
-  # failslab 없는 커널(v0, vl, vs)은 기존 결과와 같은 한 줄만
-  if ! sudo test -d "$FAILSLAB"; then echo "N/A on V0"; return 0; fi
+  # failslab 없는 커널(v0, vl, vs 등)은 한 줄만
+  if ! sudo test -d "$FAILSLAB"; then echo "N/A (no failslab)"; return 0; fi
   if ! FAILSLAB_CACHE=$(failslab_cache_dir); then
     fixture_err "failslab: /sys/kernel/slab/kmalloc-4k (또는 kmalloc-4096) 디렉터리 없음 (캐시가 병합됐을 수 있음)"; return 0
   fi
