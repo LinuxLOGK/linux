@@ -19,7 +19,7 @@
 #   13 1024 가입 → 1023 탈퇴 → 남은 1개만 수신          14 단계별 omem (없음 / 1024 / 1024 후 전부 탈퇴)
 #   15 가입 상태 close 후 같은 포트 새 소켓             16 가입 상태 addrform, 전후 omem
 #   17 수신 중 다른 그룹 churn 1000                     18 수신·송신 중 netns del
-#   19 소켓 1024 개 (W_A)                               20 테이블 할당 실패 주입 (failslab 없으면 N/A)
+#   19 소켓 1024 개 (W_A)                               20 테이블 할당 실패 주입 (failslab 없으면 N/A, S 면 +2064 검사)
 #   21 4개 가입 → 전부 탈퇴 → 다시 4개, omem            22 그룹 2개 가입 TCP 리스닝 소켓 accept
 #   23 pre: 03+04 (두 장치 가입, ifindex=0 중복 가입, ifindex=0 탈퇴), maddr
 #   24 pre: 05 (veth1 INCLUDE{fd00::1}, dummy0 INCLUDE{fd00::9})
@@ -546,7 +546,46 @@ c19() { echo "# --wa 1024: 소켓 1024 개(포트 7000+i, 그룹 i) → 그룹�
   rx_nstat
 }
 
-c20() { echo "# 테이블 할당 실패 주입 (failslab: kmalloc-4k, make-it-fail 프로세스만). 한 소켓에서 fail 켜고 5개 가입(반환값 0, 테이블 없이 omem=5x88) → 5개 그룹 수신·미가입 그룹 0 → fail 끄고 1개 더 가입(테이블 생성, 6x88+2064) → 6개 수신 → 전부 탈퇴 omem=0"
+# sock_hash_state : 커널에 S(CONFIG_IPV6_MC_SOCK_HASH) 가 켜져 있는지. on / off / unknown 출력.
+#   /proc/config.gz 가 있으면 그것만 본다. 없으면 환경변수 RF_SOCK_HASH(1|0), 그것도 없으면 unknown.
+sock_hash_state() {
+  if [[ -r /proc/config.gz ]]; then
+    if grep -qx 'CONFIG_IPV6_MC_SOCK_HASH=y' < <(zcat /proc/config.gz); then echo on; else echo off; fi
+    return
+  fi
+  case "${RF_SOCK_HASH:-}" in
+    1) echo on ;;
+    0) echo off ;;
+    '') echo unknown ;;
+    *) fixture_err "RF_SOCK_HASH=$RF_SOCK_HASH: 1 또는 0 이어야 함"; echo unknown ;;
+  esac
+}
+
+# c20_table_check : main 의 omem 네 값(joined, hold, joined6, dropped_all)으로 테이블 생성 여부 검사.
+#   E = joined / 5 (항목 크기, 커널마다 다름). joined == 5E, dropped_all == 0,
+#   joined6 == 6E + 2064 (S 켜짐) / 6E (S 꺼짐). S 판별 불가면 건너뛴다.
+c20_table_check() {
+  local s j h j6 d e want6
+  s=$(sock_hash_state)
+  if [[ $s == unknown ]]; then echo "# table check skipped (S 여부 판별 불가)"; return 0; fi
+  read -r j h j6 d < <(awk '
+    /^omem=[0-9]+ stage=/ { v = $1; sub(/^omem=/, "", v); st = $2; sub(/^stage=/, "", st); if (!(st in o)) o[st] = v }
+    END { printf "%s %s %s %s\n", ("joined" in o) ? o["joined"] : "-", ("hold" in o) ? o["hold"] : "-",
+                                  ("joined6" in o) ? o["joined6"] : "-", ("dropped_all" in o) ? o["dropped_all"] : "-" }' "$W/main.out")
+  if [[ $j == - || $j6 == - || $d == - ]]; then
+    fail "table check: omem 값 없음 (joined=$j joined6=$j6 dropped_all=$d)"; return 0
+  fi
+  if (( j == 0 || j % 5 != 0 )); then
+    fail "table check (S=$s): joined omem=$j 가 0 이거나 5 의 배수가 아님 (항목 크기를 구할 수 없음)"; return 0
+  fi
+  e=$(( j / 5 ))
+  if [[ $s == on ]]; then want6=$(( 6 * e + 2064 )); else want6=$(( 6 * e )); fi
+  echo "# table check: S=$s E=$e joined=$j joined6=$j6(기대 $want6) dropped_all=$d"
+  (( j6 == want6 )) || fail "table check (S=$s): joined6 omem=$j6, 기대 $want6 (E=$e)"
+  (( d == 0 )) || fail "table check (S=$s): dropped_all omem=$d, 기대 0"
+}
+
+c20() { echo "# 테이블 할당 실패 주입 (failslab: kmalloc-4k, make-it-fail 프로세스만). 한 소켓에서 fail 켜고 5개 가입(반환값 0, 테이블 없이 omem=5E, E=항목 크기) → 5개 그룹 수신·미가입 그룹 0 → fail 끄고 1개 더 가입(6E, S 면 테이블 생성 +2064) → 6개 수신 → 전부 탈퇴 omem=0. S 가 켜진 커널에서는 테이블 크기(+2064)까지 검사한다 (S 여부: /proc/config.gz, 없으면 RF_SOCK_HASH=1|0)"
   # failslab 없는 커널(v0, vl, vs)은 기존 결과와 같은 한 줄만
   if ! sudo test -d "$FAILSLAB"; then echo "N/A on V0"; return 0; fi
   if ! FAILSLAB_CACHE=$(failslab_cache_dir); then
@@ -591,6 +630,7 @@ c20() { echo "# 테이블 할당 실패 주입 (failslab: kmalloc-4k, make-it-fa
   leak=$(awk '/^phase2$/{exit} /^recv .*group=ff15::1:5 /' "$W/main.out" | wc -l)
   (( leak == 0 )) || fail "1단계에 미가입 그룹 ff15::1:5 수신 $leak 개"
   need main "$OMEM_RE" 4 "omem= 줄 (joined, hold, joined6, dropped_all)"
+  c20_table_check
 }
 
 c21() { echo "# 4개 가입 → 전부 탈퇴 → 다시 4개 가입 → 각 그룹 수신. 단계마다 omem="
