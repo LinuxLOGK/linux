@@ -1178,6 +1178,8 @@ static struct sock *tcp_v6_syn_recv_sock(const struct sock *sk, struct sk_buff *
 #endif
 
 		INIT_HLIST_HEAD(&newnp->ipv6_mc_list);
+		newnp->mc_hash = NULL;
+		newnp->mc_count = 0;
 		newnp->ipv6_ac_list = NULL;
 		newnp->ipv6_fl_list = NULL;
 		newnp->pktoptions  = NULL;
@@ -1247,6 +1249,8 @@ static struct sock *tcp_v6_syn_recv_sock(const struct sock *sk, struct sk_buff *
 	 */
 	newinet->inet_opt = NULL;
 	INIT_HLIST_HEAD(&newnp->ipv6_mc_list);
+	newnp->mc_hash = NULL;
+	newnp->mc_count = 0;
 	newnp->ipv6_ac_list = NULL;
 	newnp->ipv6_fl_list = NULL;
 

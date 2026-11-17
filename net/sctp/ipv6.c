@@ -739,6 +739,8 @@ static struct sock *sctp_v6_create_accept_sk(struct sock *sk,
 
 	memcpy(newnp, np, sizeof(struct ipv6_pinfo));
 	INIT_HLIST_HEAD(&newnp->ipv6_mc_list);
+	newnp->mc_hash = NULL;
+	newnp->mc_count = 0;
 	newnp->ipv6_ac_list = NULL;
 	newnp->ipv6_fl_list = NULL;
 

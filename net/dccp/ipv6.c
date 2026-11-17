@@ -436,6 +436,8 @@ static struct sock *dccp_v6_request_recv_sock(const struct sock *sk,
 		newnp->pktoptions  = NULL;
 		newnp->opt	   = NULL;
 		INIT_HLIST_HEAD(&newnp->ipv6_mc_list);
+		newnp->mc_hash = NULL;
+		newnp->mc_count = 0;
 		newnp->ipv6_ac_list = NULL;
 		newnp->ipv6_fl_list = NULL;
 		newnp->mcast_oif   = inet_iif(skb);
@@ -503,6 +505,8 @@ static struct sock *dccp_v6_request_recv_sock(const struct sock *sk,
 	newnp->rxopt.all = np->rxopt.all;
 
 	INIT_HLIST_HEAD(&newnp->ipv6_mc_list);
+	newnp->mc_hash = NULL;
+	newnp->mc_count = 0;
 	newnp->ipv6_ac_list = NULL;
 	newnp->ipv6_fl_list = NULL;
 	newnp->pktoptions = NULL;
