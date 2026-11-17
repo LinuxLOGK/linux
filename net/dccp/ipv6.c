@@ -435,7 +435,9 @@ static struct sock *dccp_v6_request_recv_sock(const struct sock *sk,
 		newsk->sk_backlog_rcv = dccp_v4_do_rcv;
 		newnp->pktoptions  = NULL;
 		newnp->opt	   = NULL;
-		newnp->ipv6_mc_list = NULL;
+		INIT_HLIST_HEAD(&newnp->ipv6_mc_list);
+		newnp->mc_hash = NULL;
+		newnp->mc_count = 0;
 		newnp->ipv6_ac_list = NULL;
 		newnp->ipv6_fl_list = NULL;
 		newnp->mcast_oif   = inet_iif(skb);
@@ -502,7 +504,9 @@ static struct sock *dccp_v6_request_recv_sock(const struct sock *sk,
 	/* Clone RX bits */
 	newnp->rxopt.all = np->rxopt.all;
 
-	newnp->ipv6_mc_list = NULL;
+	INIT_HLIST_HEAD(&newnp->ipv6_mc_list);
+	newnp->mc_hash = NULL;
+	newnp->mc_count = 0;
 	newnp->ipv6_ac_list = NULL;
 	newnp->ipv6_fl_list = NULL;
 	newnp->pktoptions = NULL;
