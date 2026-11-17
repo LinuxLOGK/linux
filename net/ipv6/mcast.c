@@ -124,8 +124,8 @@ int sysctl_mld_qrv __read_mostly = MLD_QRV_DEFAULT;
  * (join, drop, MCAST_{JOIN,LEAVE}_SOURCE_GROUP and friends); the
  * MCAST_MSFILTER paths need an exact ifindex match.
  */
-static bool ipv6_mc_match(const struct ipv6_mc_socklist *mc, int ifindex,
-			  const struct in6_addr *addr, bool any_if)
+static bool ipv6_sock_mc_match(const struct ipv6_mc_socklist *mc, int ifindex,
+			       const struct in6_addr *addr, bool any_if)
 {
 	return ((any_if && ifindex == 0) || mc->ifindex == ifindex) &&
 	       ipv6_addr_equal(&mc->addr, addr);
@@ -150,20 +150,26 @@ struct ipv6_mc_sockhash {
 	struct hlist_head	buckets[];
 };
 
-static u32 ipv6_mc_sockhash_salt __read_mostly;
+static u32 ipv6_sock_mc_hash_salt __read_mostly;
 
-static struct hlist_head *ipv6_mc_bucket(struct ipv6_mc_sockhash *tbl,
-					 const struct in6_addr *addr)
+static struct hlist_head *ipv6_sock_mc_hash_bucket(struct ipv6_mc_sockhash *tbl,
+						   const struct in6_addr *addr)
 {
-	u32 hash = __ipv6_addr_jhash(addr, ipv6_mc_sockhash_salt);
+	u32 hash = __ipv6_addr_jhash(addr, ipv6_sock_mc_hash_salt);
 
 	return &tbl->buckets[hash & (IPV6_MC_SOCKHASH_SIZE - 1)];
 }
 
 /* RTNL held, called after a join has raised np->mc_count. On allocation
  * failure the socket keeps using the list; the next join retries.
+ *
+ * Premise: the table is only freed when the membership count drops to
+ * zero, so an entry never moves from one table to another.  That is why
+ * the hnode of an existing entry can be linked into a bucket as is.
+ * Revisit this if the table is ever freed at another point (kept until
+ * socket teardown, freed below the threshold, ...).
  */
-static void ipv6_mc_hash_create(struct sock *sk)
+static void ipv6_sock_mc_hash_create(struct sock *sk)
 {
 	struct ipv6_pinfo *np = inet6_sk(sk);
 	struct ipv6_mc_sockhash *tbl;
@@ -182,8 +188,8 @@ static void ipv6_mc_hash_create(struct sock *sk)
 		return;
 	}
 
-	net_get_random_once(&ipv6_mc_sockhash_salt,
-			    sizeof(ipv6_mc_sockhash_salt));
+	net_get_random_once(&ipv6_sock_mc_hash_salt,
+			    sizeof(ipv6_sock_mc_hash_salt));
 	for (i = 0; i < IPV6_MC_SOCKHASH_SIZE; i++)
 		INIT_HLIST_HEAD(&tbl->buckets[i]);
 
@@ -191,7 +197,8 @@ static void ipv6_mc_hash_create(struct sock *sk)
 	 * addresses keep that order. The table is not visible yet.
 	 */
 	for_each_pmc_rtnl(np, mc) {
-		struct hlist_head *head = ipv6_mc_bucket(tbl, &mc->addr);
+		struct hlist_head *head =
+			ipv6_sock_mc_hash_bucket(tbl, &mc->addr);
 		struct hlist_node *pos, *last = NULL;
 
 		hlist_for_each(pos, head)
@@ -207,7 +214,7 @@ static void ipv6_mc_hash_create(struct sock *sk)
 }
 
 /* RTNL held. Shared by ipv6_sock_mc_drop() and __ipv6_sock_mc_close(). */
-static void ipv6_mc_hash_free(struct sock *sk)
+static void ipv6_sock_mc_hash_free(struct sock *sk)
 {
 	struct ipv6_pinfo *np = inet6_sk(sk);
 	struct ipv6_mc_sockhash *tbl = rtnl_dereference(np->mc_hash);
@@ -223,18 +230,19 @@ static void ipv6_mc_hash_free(struct sock *sk)
 }
 
 /* RTNL held; @mc is already at the head of np->ipv6_mc_list. */
-static void ipv6_mc_hash_link(struct ipv6_pinfo *np,
-			      struct ipv6_mc_socklist *mc)
+static void ipv6_sock_mc_hash_link(struct ipv6_pinfo *np,
+				   struct ipv6_mc_socklist *mc)
 {
 	struct ipv6_mc_sockhash *tbl = rtnl_dereference(np->mc_hash);
 
 	if (tbl)
-		hlist_add_head_rcu(&mc->hnode, ipv6_mc_bucket(tbl, &mc->addr));
+		hlist_add_head_rcu(&mc->hnode,
+				   ipv6_sock_mc_hash_bucket(tbl, &mc->addr));
 }
 
 /* RTNL held. With a table present, every entry is on a bucket. */
-static void ipv6_mc_hash_unlink(struct ipv6_pinfo *np,
-				struct ipv6_mc_socklist *mc)
+static void ipv6_sock_mc_hash_unlink(struct ipv6_pinfo *np,
+				     struct ipv6_mc_socklist *mc)
 {
 	if (rtnl_dereference(np->mc_hash))
 		hlist_del_rcu(&mc->hnode);
@@ -242,22 +250,24 @@ static void ipv6_mc_hash_unlink(struct ipv6_pinfo *np,
 
 /* Caller holds rcu_read_lock(). */
 static struct ipv6_mc_socklist *
-ipv6_mc_find_rcu(struct ipv6_pinfo *np, int ifindex,
-		 const struct in6_addr *addr, bool any_if)
+ipv6_sock_mc_find_rcu(struct ipv6_pinfo *np, int ifindex,
+		      const struct in6_addr *addr, bool any_if)
 {
 	struct ipv6_mc_sockhash *tbl = rcu_dereference(np->mc_hash);
 	struct ipv6_mc_socklist *mc;
 
 	if (tbl) {
-		hlist_for_each_entry_rcu(mc, ipv6_mc_bucket(tbl, addr), hnode) {
-			if (ipv6_mc_match(mc, ifindex, addr, any_if))
+		hlist_for_each_entry_rcu(mc,
+					 ipv6_sock_mc_hash_bucket(tbl, addr),
+					 hnode) {
+			if (ipv6_sock_mc_match(mc, ifindex, addr, any_if))
 				return mc;
 		}
 		return NULL;
 	}
 
 	for_each_pmc_rcu(np, mc) {
-		if (ipv6_mc_match(mc, ifindex, addr, any_if))
+		if (ipv6_sock_mc_match(mc, ifindex, addr, any_if))
 			return mc;
 	}
 	return NULL;
@@ -265,23 +275,24 @@ ipv6_mc_find_rcu(struct ipv6_pinfo *np, int ifindex,
 
 /* Caller holds RTNL. */
 static struct ipv6_mc_socklist *
-ipv6_mc_find_rtnl(struct ipv6_pinfo *np, int ifindex,
-		  const struct in6_addr *addr, bool any_if)
+ipv6_sock_mc_find_rtnl(struct ipv6_pinfo *np, int ifindex,
+		       const struct in6_addr *addr, bool any_if)
 {
 	struct ipv6_mc_sockhash *tbl = rtnl_dereference(np->mc_hash);
 	struct ipv6_mc_socklist *mc;
 
 	if (tbl) {
-		hlist_for_each_entry_rcu(mc, ipv6_mc_bucket(tbl, addr), hnode,
-					 lockdep_rtnl_is_held()) {
-			if (ipv6_mc_match(mc, ifindex, addr, any_if))
+		hlist_for_each_entry_rcu(mc,
+					 ipv6_sock_mc_hash_bucket(tbl, addr),
+					 hnode, lockdep_rtnl_is_held()) {
+			if (ipv6_sock_mc_match(mc, ifindex, addr, any_if))
 				return mc;
 		}
 		return NULL;
 	}
 
 	for_each_pmc_rtnl(np, mc) {
-		if (ipv6_mc_match(mc, ifindex, addr, any_if))
+		if (ipv6_sock_mc_match(mc, ifindex, addr, any_if))
 			return mc;
 	}
 	return NULL;
@@ -289,22 +300,22 @@ ipv6_mc_find_rtnl(struct ipv6_pinfo *np, int ifindex,
 
 #else /* !CONFIG_IPV6_MC_SOCK_HASH */
 
-static inline void ipv6_mc_hash_create(struct sock *sk) {}
-static inline void ipv6_mc_hash_free(struct sock *sk) {}
-static inline void ipv6_mc_hash_link(struct ipv6_pinfo *np,
-				     struct ipv6_mc_socklist *mc) {}
-static inline void ipv6_mc_hash_unlink(struct ipv6_pinfo *np,
-				       struct ipv6_mc_socklist *mc) {}
+static inline void ipv6_sock_mc_hash_create(struct sock *sk) {}
+static inline void ipv6_sock_mc_hash_free(struct sock *sk) {}
+static inline void ipv6_sock_mc_hash_link(struct ipv6_pinfo *np,
+					  struct ipv6_mc_socklist *mc) {}
+static inline void ipv6_sock_mc_hash_unlink(struct ipv6_pinfo *np,
+					    struct ipv6_mc_socklist *mc) {}
 
 /* Caller holds rcu_read_lock(). */
 static struct ipv6_mc_socklist *
-ipv6_mc_find_rcu(struct ipv6_pinfo *np, int ifindex,
-		 const struct in6_addr *addr, bool any_if)
+ipv6_sock_mc_find_rcu(struct ipv6_pinfo *np, int ifindex,
+		      const struct in6_addr *addr, bool any_if)
 {
 	struct ipv6_mc_socklist *mc;
 
 	for_each_pmc_rcu(np, mc) {
-		if (ipv6_mc_match(mc, ifindex, addr, any_if))
+		if (ipv6_sock_mc_match(mc, ifindex, addr, any_if))
 			return mc;
 	}
 	return NULL;
@@ -312,13 +323,13 @@ ipv6_mc_find_rcu(struct ipv6_pinfo *np, int ifindex,
 
 /* Caller holds RTNL. */
 static struct ipv6_mc_socklist *
-ipv6_mc_find_rtnl(struct ipv6_pinfo *np, int ifindex,
-		  const struct in6_addr *addr, bool any_if)
+ipv6_sock_mc_find_rtnl(struct ipv6_pinfo *np, int ifindex,
+		       const struct in6_addr *addr, bool any_if)
 {
 	struct ipv6_mc_socklist *mc;
 
 	for_each_pmc_rtnl(np, mc) {
-		if (ipv6_mc_match(mc, ifindex, addr, any_if))
+		if (ipv6_sock_mc_match(mc, ifindex, addr, any_if))
 			return mc;
 	}
 	return NULL;
@@ -353,7 +364,7 @@ static int __ipv6_sock_mc_join(struct sock *sk, int ifindex,
 		return -EINVAL;
 
 	rcu_read_lock();
-	if (ipv6_mc_find_rcu(np, ifindex, addr, true)) {
+	if (ipv6_sock_mc_find_rcu(np, ifindex, addr, true)) {
 		rcu_read_unlock();
 		return -EADDRINUSE;
 	}
@@ -400,9 +411,9 @@ static int __ipv6_sock_mc_join(struct sock *sk, int ifindex,
 	}
 
 	hlist_add_head_rcu(&mc_lst->node, &np->ipv6_mc_list);
-	ipv6_mc_hash_link(np, mc_lst);
+	ipv6_sock_mc_hash_link(np, mc_lst);
 	np->mc_count++;
-	ipv6_mc_hash_create(sk);
+	ipv6_sock_mc_hash_create(sk);
 
 	return 0;
 }
@@ -434,15 +445,15 @@ int ipv6_sock_mc_drop(struct sock *sk, int ifindex, const struct in6_addr *addr)
 	if (!ipv6_addr_is_multicast(addr))
 		return -EINVAL;
 
-	mc_lst = ipv6_mc_find_rtnl(np, ifindex, addr, true);
+	mc_lst = ipv6_sock_mc_find_rtnl(np, ifindex, addr, true);
 	if (!mc_lst)
 		return -EADDRNOTAVAIL;
 
 	hlist_del_rcu(&mc_lst->node);
-	ipv6_mc_hash_unlink(np, mc_lst);
+	ipv6_sock_mc_hash_unlink(np, mc_lst);
 	np->mc_count--;
 	if (!np->mc_count)
-		ipv6_mc_hash_free(sk);
+		ipv6_sock_mc_hash_free(sk);
 
 	dev = __dev_get_by_index(net, mc_lst->ifindex);
 	if (dev) {
@@ -505,7 +516,7 @@ void __ipv6_sock_mc_close(struct sock *sk)
 		struct net_device *dev;
 
 		hlist_del_rcu(&mc_lst->node);
-		ipv6_mc_hash_unlink(np, mc_lst);
+		ipv6_sock_mc_hash_unlink(np, mc_lst);
 		np->mc_count--;
 
 		dev = __dev_get_by_index(net, mc_lst->ifindex);
@@ -522,7 +533,7 @@ void __ipv6_sock_mc_close(struct sock *sk)
 		kfree_rcu(mc_lst, rcu);
 	}
 
-	ipv6_mc_hash_free(sk);
+	ipv6_sock_mc_hash_free(sk);
 }
 
 void ipv6_sock_mc_close(struct sock *sk)
@@ -565,7 +576,7 @@ int ip6_mc_source(int add, int omode, struct sock *sk,
 
 	err = -EADDRNOTAVAIL;
 
-	pmc = ipv6_mc_find_rcu(inet6, pgsr->gsr_interface, group, true);
+	pmc = ipv6_sock_mc_find_rcu(inet6, pgsr->gsr_interface, group, true);
 	if (!pmc) {		/* must have a prior join */
 		err = -EINVAL;
 		goto done;
@@ -697,7 +708,7 @@ int ip6_mc_msfilter(struct sock *sk, struct group_filter *gsf)
 		goto done;
 	}
 
-	pmc = ipv6_mc_find_rcu(inet6, gsf->gf_interface, group, false);
+	pmc = ipv6_sock_mc_find_rcu(inet6, gsf->gf_interface, group, false);
 	if (!pmc) {		/* must have a prior join */
 		err = -EINVAL;
 		goto done;
@@ -777,7 +788,7 @@ int ip6_mc_msfget(struct sock *sk, struct group_filter *gsf,
 	 * so reading the list is safe.
 	 */
 
-	pmc = ipv6_mc_find_rcu(inet6, gsf->gf_interface, group, false);
+	pmc = ipv6_sock_mc_find_rcu(inet6, gsf->gf_interface, group, false);
 	if (!pmc)		/* must have a prior join */
 		goto done;
 	gsf->gf_fmode = pmc->sfmode;
@@ -822,7 +833,7 @@ bool inet6_mc_check(struct sock *sk, const struct in6_addr *mc_addr,
 	bool rv = true;
 
 	rcu_read_lock();
-	mc = ipv6_mc_find_rcu(np, 0, mc_addr, true);
+	mc = ipv6_sock_mc_find_rcu(np, 0, mc_addr, true);
 	if (!mc) {
 		rcu_read_unlock();
 		return np->mc_all;
