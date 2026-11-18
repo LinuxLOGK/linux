@@ -39,8 +39,10 @@
 #
 # 결과: ~/kdev-kit/logs/<태그>/_env.txt, NN.txt (원본 출력은 logs/<태그>/.work/NN/)
 # 실패: 사례 안에서 시간 초과·기대 줄 누락이 있으면 "FAIL ..." 줄을 남기고, 끝에 실패 사례를 출력하고 종료 코드 1.
-# 환경 오류: tx 출발지 주소가 5초 안에 bind 가능해지지 않거나, tx 가 실패(종료 코드 != 0 또는 "sent " 줄 없음)하면
+# 환경 오류: tx 출발지 주소가 5초 안에 bind 가능해지지 않거나, tx 가 실패(종료 코드 != 0 또는 "sent " 줄 없음)하거나,
+#       mc6test(rx/tx/tcp, 백그라운드·전경)가 신호로 죽으면(스크립트가 보낸 rx_kill 의 TERM, tcp 의 10초 ALRM 제외)
 #       "FIXTURE ERROR ..." 줄을 남긴다 (커널 동작 차이가 아니라 환경 문제). 하나라도 있으면 종료 코드 2.
+#       신호로 죽은 mc6test 출력에 대한 need 판정은 건너뛴다. FIXTURE ERROR 가 있으면 FAIL 보다 우선해 표시한다.
 #       --diff 는 FIXTURE ERROR 가 있는 사례를 비교하지 않고 따로 표시한다.
 # 송수신 동기화: rx_bg 로 띄운 수신(--timeout 0 제외)에는 mc6test --sync-grace 를 붙인다. 수신은 --timeout 이 지나도
 #       끝나지 않고, 스크립트가 그 단계 송신을 모두 마친 뒤 보내는 신호(rx_wait/rx_ready2: 1단계 SIGUSR1, 2단계 SIGUSR2)
@@ -247,6 +249,22 @@ fail() { echo "FAIL $*"; CASE_FAIL=1; }
 # 사례가 끝나면 실행부가 "FIXTURE ERROR ..." 줄로 옮긴다.
 fixture_err() { echo "$*" >>"$W/.fixture_errors"; }
 
+# sig_check <출력 이름> <설명> <종료 코드> [의도한 신호 ...] : mc6test 가 신호로 끝났으면(종료 코드 128+N) fixture 오류.
+#   스크립트가 직접 보낸 신호(rx_kill 의 TERM)와 mc6test 자체 감시(tcp 의 10초 ALRM → 기존대로 FAIL)는
+#   의도한 신호로 넘겨 제외한다. 죽은 출력 이름은 $W/.died 에 남겨 그 출력의 need 판정을 건너뛴다
+#   (기대 줄이 없는 것은 커널 동작이 아니라 도구가 죽은 탓). sudo 는 명령이 신호로 죽으면 같은 신호로 자신을 끝내므로
+#   sudo pid 의 종료 코드로 판단할 수 있다.
+sig_check() {
+  local name=$1 desc=$2 rc=$3 sig s; shift 3
+  (( rc > 128 && rc <= 128 + 64 )) || return 0
+  sig=$(kill -l $((rc - 128)) 2>/dev/null) || sig="#$((rc - 128))"
+  for s in "$@"; do [[ $sig == "$s" ]] && return 0; done
+  fixture_err "mc6test $desc: SIG$sig 신호로 죽음 (rc=$rc)"
+  echo "$name" >>"$W/.died"
+}
+# died <출력 이름> : sig_check 가 그 출력의 mc6test 를 신호로 죽은 것으로 기록했는지
+died() { [[ -s $W/.died ]] && grep -qxF -- "$1" "$W/.died"; }
+
 # tx_src_ready <주소...> : tx netns veth0 의 주소가 tentative/dadfailed 없이 있고 실제로 bind 되는지 확인.
 # 될 때까지 최대 5초 대기, 끝내 안 되면 fixture 오류.
 tx_src_ready() {
@@ -270,6 +288,7 @@ tx_src_ready() {
 # need <이름> <ERE> <최소 개수> <설명> : $W/<이름>.out 에 ERE 와 맞는 줄이 최소 개수 이상인지
 need() {
   local n
+  died "$1" && return 0   # 도구가 신호로 죽음 → FIXTURE ERROR 로 이미 기록, 판정 안 함
   n=$(grep -cE "$2" "$W/$1.out" 2>/dev/null)
   (( ${n:-0} >= $3 )) || fail "$1: $4 (기대 >= $3, 실제 ${n:-0})"
 }
@@ -301,6 +320,7 @@ rx_bg() {
   local to=3
   for k in "${!args[@]}"; do (( k < p )) && [[ ${args[$k]} == --timeout ]] && to=${args[$((k + 1))]}; done
   printf -v "SYNC_$name" '%s' 0
+  printf -v "KILLED_$name" '%s' 0
   printf -v "PH2_$name" '%s' $(( p < ${#args[@]} ))
   if [[ $to != 0 ]]; then
     args=("${args[@]:0:p}" --sync-grace $SYNC_GRACE_MS "${args[@]:p}")
@@ -327,21 +347,37 @@ rx_signal() {
   return 0
 }
 # rx_wait <이름> : 마지막 단계 송신 끝 신호를 보내고 종료를 기다린다
+#   종료 코드로 신호 종료를 확인한다 (rx_kill 이 보낸 TERM 은 제외. USR1/USR2 는 --sync-grace 처리기가 받으므로 종료 신호 아님)
 rx_wait() {
-  local v="PID_$1" h="PH2_$1"
+  local v="PID_$1" h="PH2_$1" k="KILLED_$1" rc
   if [[ ${!h:-0} == 1 ]]; then rx_signal "$1" USR2; else rx_signal "$1" USR1; fi
-  wait "${!v}" 2>/dev/null
+  wait "${!v}" 2>/dev/null; rc=$?
+  if [[ ${!k:-0} == 1 ]]; then sig_check "$1" "rx $1" $rc TERM; else sig_check "$1" "rx $1" $rc; fi
+  return $rc
 }
-rx_kill() { local v="MPID_$1"; [[ -n "${!v:-}" ]] && sudo kill "${!v}" 2>/dev/null; rx_wait "$1"; }
+# rx_kill <이름> : 스크립트가 의도적으로 TERM 으로 끝낸다 (kill 이 성공했을 때만 TERM 을 의도한 신호로 표시)
+rx_kill() {
+  local v="MPID_$1"
+  [[ -n "${!v:-}" ]] && sudo kill "${!v}" 2>/dev/null && printf -v "KILLED_$1" '%s' 1
+  rx_wait "$1"
+}
 
-rxf() { sudo ip netns exec rx "$MC" rx "$@" 2>&1; }   # 전경 rx
+# 전경 rx. 신호로 죽으면 fixture 오류
+rxf() {
+  local rc
+  sudo ip netns exec rx "$MC" rx "$@" 2>&1; rc=$?
+  sig_check rxf "rx(전경) $1 $2" $rc
+  return $rc
+}
 # txf <이름> <mc6test tx 인자...> → $W/<이름>.out. 종료 코드 != 0 이거나 "sent " 줄이 없으면 fixture 오류.
 txf() {
   local name=$1; shift
   local rc ts=$EPOCHREALTIME
   sudo ip netns exec tx "$MC" tx --dev veth0 "$@" >"$W/$name.out" 2>&1; rc=$?
   echo "$name $ts $EPOCHREALTIME $rc" >>"$W/.tx_times"
-  if (( rc != 0 )) || ! grep -q '^sent ' "$W/$name.out"; then
+  if (( rc > 128 && rc <= 128 + 64 )); then
+    sig_check "$name" "tx $name" $rc
+  elif (( rc != 0 )) || ! grep -q '^sent ' "$W/$name.out"; then
     fixture_err "tx $name: rc=$rc$(grep -q '^sent ' "$W/$name.out" || echo ', sent 줄 없음'): $(head -1 "$W/$name.out")"
   fi
   return $rc
@@ -544,7 +580,7 @@ c18() { echo "# 수신·송신 중 ip netns del rx (+ rx 프로세스 종료) �
   sudo ip netns del rx; rc=$?
   echo "netns del rx rc=$rc"
   rx_kill main
-  wait $t
+  wait $t; sig_check tx "tx tx" $?   # sendto 실패(일반 종료 코드)는 정상, 신호 종료만 fixture 오류
   sleep 1
   a=$(dmesg_wb)
   echo "dmesg_new_warn_bug=$((a - b))"
@@ -673,7 +709,8 @@ c22() { echo "# 그룹 2개 가입한 IPv6 TCP 리스닝 소켓에서 accept (�
     rc=$?
     show t$conn
     echo "tcp $conn rc=$rc"
-    (( rc == 0 )) || fail "tcp $conn: 종료 코드 $rc (124=스크립트 timeout, 142=mc6test 10초 alarm)"
+    sig_check t$conn "tcp $conn" $rc ALRM   # ALRM 은 mc6test 자체 10초 감시 → 아래 FAIL 로 둔다
+    (( rc == 0 )) || died t$conn || fail "tcp $conn: 종료 코드 $rc (124=스크립트 timeout, 142=mc6test 10초 alarm)"
     need t$conn '^omem=[0-9]+ stage=(listen|accepted|child_closed) sock=(parent|child)$' 4 "omem= 줄 (listen, accepted x2, child_closed)"
     need t$conn '^maddr (veth1|dummy0) ff15::[12]=(yes|no) stage=' 12 "maddr 줄 (그룹 2 x 장치 2 x 단계 3)"
     need t$conn '^parent closed rc=0$' 1 "parent closed"
@@ -819,7 +856,8 @@ c32() { echo "# 그룹 5개 가입한 IPv6 TCP 리스닝 소켓에서 accept (�
     rc=$?
     show t$conn
     echo "tcp $conn rc=$rc"
-    (( rc == 0 )) || fail "tcp $conn: 종료 코드 $rc (124=스크립트 timeout, 142=mc6test 10초 alarm)"
+    sig_check t$conn "tcp $conn" $rc ALRM   # ALRM 은 mc6test 자체 10초 감시 → 아래 FAIL 로 둔다
+    (( rc == 0 )) || died t$conn || fail "tcp $conn: 종료 코드 $rc (124=스크립트 timeout, 142=mc6test 10초 alarm)"
     need t$conn '^omem=[0-9]+ stage=(listen|accepted|child_closed) sock=(parent|child)$' 4 "omem= 줄 (listen, accepted x2, child_closed)"
     need t$conn '^maddr (veth1|dummy0) ff15::(1|2|f:[0-2])=(yes|no) stage=' 30 "maddr 줄 (그룹 5 x 장치 2 x 단계 3)"
     need t$conn '^parent closed rc=0$' 1 "parent closed"

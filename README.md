@@ -8,6 +8,7 @@ Linux 5.4.214 의 소켓별 멀티캐스트 가입 검색(inet6_mc_check 등)이
 
 ## 실행
     cd tools && make
+    cd tools && make static                 # 공유 라이브러리를 읽기 어려운 최소 게스트, failslab 시험용
     ./run-fixture.sh <태그>                 # 01~37 전부 (sudo 필요)
     ./run-fixture.sh <태그> 05 26           # 일부만
     ./run-fixture.sh --diff --behavior v0 <태그>   # 메모리 값 제외, 판정만 비교
